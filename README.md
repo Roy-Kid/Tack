@@ -50,6 +50,19 @@ the Tack versions it supports:
 `examples/plugin-echo` is a complete one-tool plugin. Tack bundles its own
 package manager for plugin installs; nothing else needs to be on `PATH`.
 
+## Runtime updates
+
+The runtime is pinned to one exact version. A scheduled workflow
+(`.github/workflows/runtime-update.yml`) watches for new releases, re-pins,
+runs the full suite, and opens a pull request that reports the result. Run it
+by hand from the Actions tab, optionally with an exact version, or locally
+(Node 22.18 or newer runs the TypeScript script directly):
+
+```sh
+node scripts/runtime-update.ts check            # current vs newest `next` release
+node scripts/runtime-update.ts apply <version>  # then: npm install
+```
+
 ## Environment
 
 | Variable | Meaning |
