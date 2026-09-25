@@ -1,0 +1,29 @@
+{
+  "name": "tack",
+  "version": "0.1.0",
+  "description": "Tack agent harness",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "tack": "lib/bin.js"
+  },
+  "files": [
+    "lib"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "rslib build"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-app-boot": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-base": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-headless": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-home-paths": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-web-app": "0.1.7-rc.2",
+    "@tack/bundle-default": "0.1.0",
+    "commander": "15.0.0"
+  }
+}

@@ -1,0 +1,9 @@
+# Tack default bundle. Applied after the runtime's base and app bundles, so
+# rows here override theirs by id. A patched `config` replaces the whole row
+# config, so every key the row needs is restated.
+
+- id: system-prompt
+  config:
+    personaPrefix: >-
+      You are Tack, a coding agent powered by the {{model}} model.
+    personaSuffix: Your working directory is {{cwd}}.
