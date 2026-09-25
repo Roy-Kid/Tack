@@ -1,0 +1,96 @@
+name: Runtime update
+
+# Track new DeepSeek Harness releases: re-pin every runtime package, run the
+# full suite against the new runtime, and open (or refresh) a pull request
+# that reports the outcome. A failing suite still opens the pull request, so
+# incompatibilities are visible instead of silent.
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: npm dist-tag to track
+        default: next
+        required: false
+      version:
+        description: Exact runtime version (overrides the tag)
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: runtime-update
+  cancel-in-progress: false
+
+env:
+  DSH_TELEMETRY_DISABLED: "1"
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Check for a newer runtime
+        id: check
+        env:
+          TRACK_TAG: ${{ inputs.tag || 'next' }}
+          TRACK_VERSION: ${{ inputs.version }}
+        run: |
+          if [ -n "$TRACK_VERSION" ]; then
+            node scripts/runtime-update.ts check --version "$TRACK_VERSION"
+          else
+            node scripts/runtime-update.ts check --tag "$TRACK_TAG"
+          fi
+
+      - name: Re-pin the runtime
+        if: steps.check.outputs.update == 'true'
+        env:
+          CANDIDATE: ${{ steps.check.outputs.candidate }}
+        run: |
+          node scripts/runtime-update.ts apply "$CANDIDATE"
+          npm install --no-audit --no-fund
+          node scripts/runtime-update.ts installed
+
+      - name: Verify against the new runtime
+        id: verify
+        if: steps.check.outputs.update == 'true'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          { npm run lint && npm run typecheck && npm test; } 2>&1 | tee verify.log
+
+      - name: Write the report
+        if: steps.check.outputs.update == 'true'
+        env:
+          CURRENT: ${{ steps.check.outputs.current }}
+          CANDIDATE: ${{ steps.check.outputs.candidate }}
+          OUTCOME: ${{ steps.verify.outcome }}
+        run: |
+          node scripts/runtime-update.ts report --from "$CURRENT" --to "$CANDIDATE" --outcome "$OUTCOME" --log verify.log > "$RUNNER_TEMP/runtime-update.md"
+
+      - name: Open the pull request
+        if: steps.check.outputs.update == 'true'
+        uses: peter-evans/create-pull-request@v8.1.1
+        with:
+          branch: runtime/dsh-${{ steps.check.outputs.candidate }}
+          base: main
+          title: "Update runtime to DSH ${{ steps.check.outputs.candidate }}${{ steps.verify.outcome != 'success' && ' (verification failed)' || '' }}"
+          body-path: ${{ runner.temp }}/runtime-update.md
+          commit-message: "Update runtime to DSH ${{ steps.check.outputs.candidate }}"
+          add-paths: |
+            packages/tack/package.json
+            package-lock.json
+          labels: runtime-update
+          delete-branch: true
