@@ -1,0 +1,14 @@
+{
+  "name": "@tack/bundle-default",
+  "version": "0.1.0",
+  "description": "Tack default bundle: the Tack persona layer over the runtime's app bundles",
+  "license": "MIT",
+  "files": [
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
