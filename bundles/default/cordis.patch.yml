@@ -7,3 +7,22 @@
     personaPrefix: >-
       You are Tack, a coding agent powered by the {{model}} model.
     personaSuffix: Your working directory is {{cwd}}.
+
+# Tack owns each app's command line (`tack run --help`, `tack web --help`).
+# A patch cannot swap a row's module, so the runtime's startup rows are
+# disabled and Tack rows providing the same services are inserted. Each Tack
+# row mounts only in a profile started with that app's bundle.
+- id: headless-startup
+  disabled: true
+
+- id: web-startup
+  disabled: true
+
+- insert:
+    - id: tack-headless-startup
+      name: '@tack/plugins/headless-startup'
+      disabled: !!js "!ctx.get('profileContext')?.startedBundles.includes('@deepseek-ai/dsh-headless')"
+
+    - id: tack-web-startup
+      name: '@tack/plugins/web-startup'
+      disabled: !!js "!ctx.get('profileContext')?.startedBundles.includes('@deepseek-ai/dsh-web-app')"

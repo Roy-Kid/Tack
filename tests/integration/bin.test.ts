@@ -92,12 +92,18 @@ describe("tack doctor", () => {
 });
 
 describe("tack run", () => {
-  it("boots the default profile and forwards --help to the app", async () => {
+  it("boots the default profile and prints Tack's run help", async () => {
     const home = tempHome();
     const result = await spawnTack(["run", "--help"], { home });
     expect(result.code).toBe(0);
-    expect(result.stdout.trim()).not.toBe("");
-    expect(result.stdout).not.toContain("Usage: tack");
+    expect(result.stdout).toContain("Usage: tack run");
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it("rejects a blank task with a usage error", async () => {
+    const home = tempHome();
+    const result = await spawnTack(["run", "   "], { home });
+    expect(result.code).toBe(1);
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -111,6 +117,14 @@ describe("tack run", () => {
 });
 
 describe("tack web", () => {
+  it("boots the web profile and prints Tack's web help", async () => {
+    const home = tempHome();
+    const result = await spawnTack(["web", "--help"], { home });
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("Usage: tack web");
+    rmSync(home, { recursive: true, force: true });
+  });
+
   it("serves on a forwarded port, then stops on SIGINT", async () => {
     const home = tempHome();
     const running = await spawnTackUntil(["web", "--no-open", "--port", "0"], {

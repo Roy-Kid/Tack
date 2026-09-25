@@ -47,8 +47,8 @@ describe("parseTackArgs", () => {
   });
 
   it("parses doctor options", () => {
-    expect(parseTackArgs(["doctor"])).toEqual({ mode: "doctor", profile: DEFAULT_RUN_PROFILE, dumpConfig: false });
-    expect(parseTackArgs(["doctor", "--dump-config", "--profile", "web"])).toEqual({ mode: "doctor", profile: "web", dumpConfig: true });
+    expect(parseTackArgs(["doctor"])).toEqual({ mode: "doctor", profile: DEFAULT_RUN_PROFILE, dumpConfig: false, tools: false });
+    expect(parseTackArgs(["doctor", "--dump-config", "--profile", "web"])).toEqual({ mode: "doctor", profile: "web", dumpConfig: true, tools: false });
   });
 
   it("rejects an unknown command and a repeated profile", () => {
@@ -60,5 +60,28 @@ describe("parseTackArgs", () => {
     const help = helpText();
     expect(help).toContain("Usage: tack");
     for (const command of ["run", "web", "doctor", "version"]) expect(help).toContain(command);
+  });
+});
+
+describe("parseTackArgs plugin", () => {
+  it("parses each plugin action with the default profile", () => {
+    expect(parseTackArgs(["plugin", "add", "a", "./b.tgz"])).toEqual({ mode: "plugin", action: "add", profile: DEFAULT_RUN_PROFILE, names: ["a", "./b.tgz"] });
+    expect(parseTackArgs(["plugin", "remove", "a"])).toEqual({ mode: "plugin", action: "remove", profile: DEFAULT_RUN_PROFILE, names: ["a"] });
+    expect(parseTackArgs(["plugin", "enable", "a"])).toEqual({ mode: "plugin", action: "enable", profile: DEFAULT_RUN_PROFILE, names: ["a"] });
+    expect(parseTackArgs(["plugin", "disable", "a"])).toEqual({ mode: "plugin", action: "disable", profile: DEFAULT_RUN_PROFILE, names: ["a"] });
+    expect(parseTackArgs(["plugin", "list"])).toEqual({ mode: "plugin", action: "list", profile: DEFAULT_RUN_PROFILE, names: [] });
+  });
+
+  it("targets another profile", () => {
+    expect(parseTackArgs(["plugin", "add", "a", "--profile", "web"])).toEqual({ mode: "plugin", action: "add", profile: "web", names: ["a"] });
+    expect(parseTackArgs(["plugin", "list", "--profile", "web"])).toEqual({ mode: "plugin", action: "list", profile: "web", names: [] });
+  });
+
+  it("requires a package for add, remove, enable, and disable", () => {
+    for (const action of ["add", "remove", "enable", "disable"]) expect(() => parseTackArgs(["plugin", action])).toThrow(CommanderError);
+  });
+
+  it("parses doctor --tools", () => {
+    expect(parseTackArgs(["doctor", "--tools"])).toEqual({ mode: "doctor", profile: DEFAULT_RUN_PROFILE, dumpConfig: false, tools: true });
   });
 });

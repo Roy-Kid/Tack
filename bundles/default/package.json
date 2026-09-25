@@ -1,6 +1,6 @@
 {
   "name": "@tack/bundle-default",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Tack default bundle: the Tack persona layer over the runtime's app bundles",
   "license": "MIT",
   "files": [

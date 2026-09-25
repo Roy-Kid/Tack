@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { CommanderError } from "commander";
 import { helpText, parseTackArgs } from "./cli.js";
 import { formatVersion, runApp } from "./commands.js";
+import { runPluginAction } from "./plugin.js";
 import { collectDoctorReport, doctorExitCode, formatDoctorReport } from "./doctor.js";
 import { resolveTackHome } from "./home.js";
 import { REQUIRED_ROW_IDS, bindHome, loadRuntime } from "./runtime/dsh.js";
@@ -18,7 +19,16 @@ function tackVersion(): string {
   return (JSON.parse(readFileSync(manifest, "utf8")) as { version: string }).version;
 }
 
+/** A closed stdout (`tack ... | head`) ends the command quietly instead of crashing. */
+function exitQuietlyOnClosedStdout(): void {
+  process.stdout.on("error", (error: NodeJS.ErrnoException) => {
+    if (error.code === "EPIPE") process.exit(process.exitCode ?? 0);
+    throw error;
+  });
+}
+
 async function main(): Promise<void> {
+  exitQuietlyOnClosedStdout();
   const tackHome = resolveTackHome();
   bindHome(tackHome);
 
@@ -51,6 +61,12 @@ async function main(): Promise<void> {
         process.stdout.write(runtime.renderDump(invocation.profile, []));
         return;
       }
+      if (invocation.tools) {
+        runtime.ensureProfile(invocation.profile);
+        const tools = await runtime.listTools(invocation.profile);
+        process.stdout.write(tools.map((tool) => `${tool}\n`).join(""));
+        return;
+      }
       const report = collectDoctorReport(runtime, {
         tackVersion: tackVersion(),
         home: tackHome,
@@ -61,6 +77,14 @@ async function main(): Promise<void> {
       process.exitCode = doctorExitCode(report);
       return;
     }
+    case "plugin":
+      try {
+        process.exitCode = await runPluginAction(runtime, invocation, tackVersion());
+      } catch (error) {
+        process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        process.exitCode = 1;
+      }
+      return;
     case "run":
     case "web":
       try {
