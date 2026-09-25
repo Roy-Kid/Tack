@@ -10,5 +10,5 @@
     "verbatimModuleSyntax": true,
     "noUncheckedIndexedAccess": true
   },
-  "include": ["packages/tack/src", "tests", "*.config.ts", "packages/tack/rslib.config.ts"]
+  "include": ["packages/tack/src", "packages/plugins/src", "tests", "*.config.ts", "packages/*/rslib.config.ts"]
 }

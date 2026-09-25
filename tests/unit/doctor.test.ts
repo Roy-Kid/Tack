@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@rstest/core";
 import { formatVersion } from "../../packages/tack/src/commands.js";
-import { doctorExitCode, formatDoctorReport, onPath, type DoctorReport } from "../../packages/tack/src/doctor.js";
+import { doctorExitCode, formatDoctorReport, type DoctorReport } from "../../packages/tack/src/doctor.js";
 
 const base: DoctorReport = {
   tack: "0.1.0",
@@ -10,7 +10,7 @@ const base: DoctorReport = {
   homeExists: true,
   profiles: [{ name: "default", dir: "/x/tack/profiles/default", bundles: ["a", "b"], layers: ["a", "b"], skipped: [] }],
   apiKeySet: false,
-  pnpm: false,
+  packageManager: { name: "pnpm", version: "1.2.3" },
   compose: { profile: "default", rows: 3, missing: [] },
 };
 
@@ -33,7 +33,7 @@ describe("formatDoctorReport", () => {
     expect(text).toContain("v22.0.0");
     expect(text).toContain("/x/tack");
     expect(text).toContain("DEEPSEEK_API_KEY: not set");
-    expect(text).toContain("pnpm not found");
+    expect(text).toContain("pnpm 1.2.3 (bundled)");
     expect(text).toContain("default: a, b");
     expect(text).toContain("3 rows");
     expect(text).not.toMatch(/sk-|secret/i);
@@ -58,12 +58,5 @@ describe("doctorExitCode", () => {
     expect(doctorExitCode({ ...base, compose: { profile: "default", rows: 1, missing: ["agent-loop"] } })).toBe(1);
     expect(doctorExitCode({ ...base, error: "boom" })).toBe(1);
     expect(doctorExitCode({ ...base, compose: undefined })).toBe(1);
-  });
-});
-
-describe("onPath", () => {
-  it("finds node on the current PATH and not a made-up binary", () => {
-    expect(onPath("node")).toBe(true);
-    expect(onPath("definitely-not-a-real-binary-xyz")).toBe(false);
   });
 });

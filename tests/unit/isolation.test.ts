@@ -42,7 +42,12 @@ describe("runtime dependency isolation", () => {
   });
 
   it("imports the runtime only from the runtime module", () => {
-    const sources = [...walk(join(REPO_ROOT, "packages", "tack", "src")), ...walk(join(REPO_ROOT, "bundles"))];
+    const sources = [
+      ...walk(join(REPO_ROOT, "packages", "tack", "src")),
+      ...walk(join(REPO_ROOT, "packages", "plugins", "src")),
+      ...walk(join(REPO_ROOT, "bundles")),
+      ...walk(join(REPO_ROOT, "examples")),
+    ];
     const offenders = sources
       .filter((file) => !file.startsWith(RUNTIME_MODULE_DIR))
       .filter((file) => /from\s+["']@deepseek-ai\/|import\(\s*["']@deepseek-ai\//.test(readFileSync(file, "utf8")))

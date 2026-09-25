@@ -1,5 +1,4 @@
 import { existsSync } from "node:fs";
-import { delimiter, join } from "node:path";
 import type { ProfileInfo, Runtime } from "./runtime/dsh.js";
 
 export interface DoctorReport {
@@ -10,7 +9,7 @@ export interface DoctorReport {
   homeExists: boolean;
   profiles: ProfileInfo[];
   apiKeySet: boolean;
-  pnpm: boolean;
+  packageManager?: { name: string; version: string };
   compose?: { profile: string; rows: number; missing: string[] };
   error?: string;
 }
@@ -24,13 +23,6 @@ export interface DoctorContext {
   nodeVersion?: string;
 }
 
-/** Whether an executable named `name` is on PATH. */
-export function onPath(name: string, env: NodeJS.ProcessEnv = process.env): boolean {
-  const entries = (env.PATH ?? "").split(delimiter).filter(Boolean);
-  const candidates = process.platform === "win32" ? [`${name}.cmd`, `${name}.exe`, name] : [name];
-  return entries.some((dir) => candidates.some((file) => existsSync(join(dir, file))));
-}
-
 export function collectDoctorReport(runtime: Runtime | undefined, context: DoctorContext): DoctorReport {
   const env = context.env ?? process.env;
   const report: DoctorReport = {
@@ -40,13 +32,13 @@ export function collectDoctorReport(runtime: Runtime | undefined, context: Docto
     homeExists: existsSync(context.home),
     profiles: [],
     apiKeySet: Boolean(env.DEEPSEEK_API_KEY),
-    pnpm: onPath("pnpm", env),
   };
   if (runtime === undefined) {
     report.error = "runtime not loaded";
     return report;
   }
   report.runtime = { name: runtime.name, version: runtime.version };
+  report.packageManager = runtime.packageManager;
   try {
     runtime.ensureProfile(context.profile);
     report.profiles = runtime.listProfiles();
@@ -69,7 +61,7 @@ export function formatDoctorReport(report: DoctorReport): string {
   lines.push(`Node        ${report.node}`);
   lines.push(`TACK_HOME   ${report.home}${report.homeExists ? "" : " (missing)"}`);
   lines.push(`DEEPSEEK_API_KEY: ${report.apiKeySet ? "set" : "not set"}`);
-  lines.push(`plugin management (M3): pnpm ${report.pnpm ? "found" : "not found"} on PATH`);
+  lines.push(`Plugins     ${report.packageManager ? `${report.packageManager.name} ${report.packageManager.version} (bundled)` : "unavailable"}`);
   lines.push("Profiles");
   if (report.profiles.length === 0) lines.push("  (none)");
   for (const profile of report.profiles) {

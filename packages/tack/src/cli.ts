@@ -9,11 +9,13 @@
  * app's help rather than Tack's.
  */
 import { Command, CommanderError, InvalidArgumentError } from "commander";
+import type { PluginAction } from "./plugin.js";
 
 export type Invocation =
   | { mode: "help" }
   | { mode: "version" }
-  | { mode: "doctor"; profile: string; dumpConfig: boolean }
+  | { mode: "doctor"; profile: string; dumpConfig: boolean; tools: boolean }
+  | { mode: "plugin"; action: PluginAction; profile: string; names: string[] }
   | { mode: "run"; profile: string; patches: string[]; args: string[] }
   | { mode: "web"; profile: string; patches: string[]; args: string[] };
 
@@ -40,6 +42,9 @@ Examples:
   tack web --port 0 --no-open         let the OS pick a port, do not open a browser
   tack doctor                         report runtime, home, and profile state
   tack doctor --dump-config           print the composed default profile
+  tack doctor --tools                 list the tools registered in the default profile
+  tack plugin add <package>           install a plugin into the default profile
+  tack plugin list --profile web      list the web profile's plugins
 `;
 
 /** Build the commander program. `resolved` receives the parsed invocation. */
@@ -80,8 +85,39 @@ export function buildProgram(resolve: (invocation: Invocation) => void): Command
     .description("report runtime, home, and profile state")
     .option("--profile <name>", "profile to check", selectProfile)
     .option("--dump-config", "print the composed profile configuration and exit")
-    .action((options: { profile?: string; dumpConfig?: boolean }) => {
-      resolve({ mode: "doctor", profile: options.profile ?? DEFAULT_RUN_PROFILE, dumpConfig: options.dumpConfig === true });
+    .option("--tools", "list the tools registered on the profile's host plane (boots without its app) and exit")
+    .action((options: { profile?: string; dumpConfig?: boolean; tools?: boolean }) => {
+      resolve({
+        mode: "doctor",
+        profile: options.profile ?? DEFAULT_RUN_PROFILE,
+        dumpConfig: options.dumpConfig === true,
+        tools: options.tools === true,
+      });
+    });
+
+  const plugin = program
+    .command("plugin")
+    .description("install, remove, enable, disable, and list a profile's plugins")
+    .addHelpText("after", `\nPlugins go into one profile (default: ${DEFAULT_RUN_PROFILE}); pass --profile ${DEFAULT_WEB_PROFILE} for browser sessions.\n`);
+  const pluginAction = (action: PluginAction, args: string, description: string) =>
+    plugin
+      .command(action)
+      .description(description)
+      .argument(args)
+      .option("--profile <name>", `Tack profile to manage (default: ${DEFAULT_RUN_PROFILE})`, selectProfile)
+      .action((names: string[] | undefined, options: { profile?: string }) => {
+        resolve({ mode: "plugin", action, profile: options.profile ?? DEFAULT_RUN_PROFILE, names: names ?? [] });
+      });
+  pluginAction("add", "<spec...>", "install plugin packages (registry names, tarballs, or paths)");
+  pluginAction("remove", "<name...>", "uninstall plugin packages");
+  pluginAction("enable", "<name...>", "enable installed bundles");
+  pluginAction("disable", "<name...>", "disable installed bundles without uninstalling them");
+  plugin
+    .command("list")
+    .description("list installed plugins")
+    .option("--profile <name>", `Tack profile to list (default: ${DEFAULT_RUN_PROFILE})`, selectProfile)
+    .action((options: { profile?: string }) => {
+      resolve({ mode: "plugin", action: "list", profile: options.profile ?? DEFAULT_RUN_PROFILE, names: [] });
     });
 
   return program;

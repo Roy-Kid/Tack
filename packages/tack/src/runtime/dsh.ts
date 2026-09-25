@@ -8,6 +8,9 @@
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { bundledPnpm, readTackCompat, type PluginRecord } from "./plugins.js";
+
+export type { PluginRecord } from "./plugins.js";
 
 /** The runtime reads only this variable for its home; Tack maps TACK_HOME onto it. */
 const RUNTIME_HOME_ENV = "DSH_HOME";
@@ -41,6 +44,9 @@ export const PROFILE_TEMPLATES: Readonly<Record<string, readonly string[]>> = {
   web: [RUNTIME_BUNDLE_BASE, RUNTIME_BUNDLE_WEB, TACK_BUNDLE_DEFAULT],
 };
 
+/** The runtime's app bundles. A profile without them boots only its host plane. */
+const APP_BUNDLES: readonly string[] = [RUNTIME_BUNDLE_HEADLESS, RUNTIME_BUNDLE_WEB];
+
 /** Row ids every Tack composition must carry; absence means the runtime cannot serve. */
 export const REQUIRED_ROW_IDS: readonly string[] = ["agent-loop", "system-prompt"];
 
@@ -64,11 +70,21 @@ export interface BootOptions {
   args: readonly string[];
 }
 
+export interface PluginCommandResult {
+  exitCode: number;
+  /** Packages the runtime refused as incompatible with its version. */
+  incompatible: { name: string; version: string }[];
+  /** Diagnostics file for a failed run. */
+  logPath?: string;
+}
+
 export interface Runtime {
   /** Runtime implementation name and version, for diagnostics. */
   readonly name: string;
   readonly version: string;
   readonly home: string;
+  /** The package manager Tack bundles for plugin installs. */
+  readonly packageManager: { name: string; version: string };
   profileDir(name: string): string;
   /** Load a profile, creating it from its template on first use. */
   ensureProfile(name: string): ProfileInfo;
@@ -81,6 +97,16 @@ export interface Runtime {
   boot(name: string, options: BootOptions): Promise<void>;
   /** Whether an error is a runtime startup failure whose message is user-facing. */
   isStartupError(error: unknown): error is Error;
+  /** Install or remove plugin packages in a profile; new bundles are enabled automatically. */
+  pluginCommand(name: string, verb: "add" | "remove", specs: readonly string[]): Promise<PluginCommandResult>;
+  listPlugins(name: string): PluginRecord[];
+  /** Enable or disable an installed bundle without reinstalling it. */
+  setPluginEnabled(name: string, pluginName: string, enabled: boolean): Promise<void>;
+  /**
+   * Names of the tools a profile's agents can call, read from the live
+   * registry. The profile boots without its app, so nothing runs or serves.
+   */
+  listTools(name: string): Promise<string[]>;
 }
 
 /**
@@ -102,11 +128,14 @@ export function bindHome(
 
 /** Load the runtime. Imports the runtime lazily so {@link bindHome} takes effect first. */
 export async function loadRuntime(tackHome: string): Promise<Runtime> {
-  const [profileBoot, appBoot, homePaths] = await Promise.all([
+  const [profileBoot, appBoot, homePaths, pluginOps, atomicWrite] = await Promise.all([
     import("@deepseek-ai/dsh/profile-boot"),
     import("@deepseek-ai/dsh-app-boot"),
     import("@deepseek-ai/dsh-home-paths"),
+    import("@deepseek-ai/dsh-plugin-manager/operations"),
+    import("@deepseek-ai/dsh-atomic-write"),
   ]);
+  const pnpm = bundledPnpm();
   const boundHome = homePaths.resolveDshHome();
   if (resolve(boundHome) !== resolve(tackHome)) {
     throw new Error(`tack: runtime home is ${boundHome} but Tack home is ${tackHome}; bindHome() must run before the runtime loads`);
@@ -146,10 +175,14 @@ export async function loadRuntime(tackHome: string): Promise<Runtime> {
     profile.patches,
   ];
 
+  const pluginLocation = (dir: string) => ({ binName: BIN_NAME, profileDir: dir, installAnchor: INSTALL_ANCHOR });
+  const LOCK_WAIT_MS = 120_000;
+
   return {
     name: "DSH",
     version: appBoot.getDshRuntimeVersion(),
     home: tackHome,
+    packageManager: { name: "pnpm", version: pnpm.version },
     profileDir,
     ensureProfile: (name) => toInfo(name, load(name)),
     listProfiles: () => {
@@ -186,8 +219,84 @@ export async function loadRuntime(tackHome: string): Promise<Runtime> {
         resolvedProfile: { profile, installAnchor: INSTALL_ANCHOR },
         patchFiles: options.patchFiles,
         args: options.args,
+        packageManager: pnpm.invocation,
       });
     },
     isStartupError: (error): error is Error => error instanceof appBoot.StartupError,
+    pluginCommand: async (name, verb, specs) => {
+      const profile = load(name);
+      const result = await pluginOps.runPluginCommand(
+        { profile: name, dir: profile.dir, installAnchor: INSTALL_ANCHOR, cwd: process.cwd(), home: tackHome },
+        [verb, ...specs],
+        {
+          ...pnpm.invocation,
+          execution: "cli",
+          outputBytes: 16_384,
+          lockWaitMs: LOCK_WAIT_MS,
+          lookupTimeoutMs: LOCK_WAIT_MS,
+          onOutput: (text, stream) => void process[stream].write(text),
+        },
+      );
+      return {
+        exitCode: result.exitCode,
+        incompatible: (result.incompatible ?? []).map(({ name: pkg, version }) => ({ name: pkg, version })),
+        ...(result.exitCode !== 0 && { logPath: result.logPath }),
+      };
+    },
+    listPlugins: (name) => {
+      const profile = load(name);
+      return appBoot.readProfilePlugins(pluginLocation(profile.dir)).dependencies.map((dependency) => {
+        const tackCompat = readTackCompat(profile.dir, dependency.name);
+        return {
+          name: dependency.name,
+          version: dependency.version,
+          bundle: dependency.bundle,
+          enabled: dependency.enabled,
+          ...(tackCompat !== undefined && { tackCompat }),
+        };
+      });
+    },
+    setPluginEnabled: async (name, pluginName, enabled) => {
+      const profile = load(name);
+      const template = PROFILE_TEMPLATES[name] ?? [];
+      if (!enabled && template.includes(pluginName)) {
+        throw new Error(`tack: ${pluginName} is part of the "${name}" profile template and cannot be disabled`);
+      }
+      await atomicWrite.withFileLock(
+        join(profile.dir, "package.json"),
+        async () => {
+          const inventory = appBoot.readProfilePlugins(pluginLocation(profile.dir));
+          const plugin = inventory.dependencies.find((dependency) => dependency.name === pluginName);
+          if (plugin === undefined) throw new Error(`tack: ${pluginName} is not installed in profile "${name}"`);
+          if (!plugin.bundle) throw new Error(`tack: ${pluginName} is not a bundle; there is nothing to enable or disable`);
+          const bundles = [...(inventory.manifest.dsh?.profile?.bundles ?? [])];
+          const next = enabled
+            ? bundles.includes(pluginName) ? bundles : [...bundles, pluginName]
+            : bundles.filter((bundle) => bundle !== pluginName);
+          appBoot.writeProfileBundles(profile.dir, inventory.manifest, next);
+        },
+        { waitMs: LOCK_WAIT_MS },
+      );
+    },
+    listTools: async (name) => {
+      const loaded = load(name);
+      // Boot the host plane only: drop the app bundles so no runner starts and nothing serves.
+      const hostOnly = { ...loaded, layers: loaded.layers.filter((layer) => !APP_BUNDLES.includes(layer.packageName)) };
+      const { ctx, shutdown } = await profileBoot.runProfile({
+        environment: appBoot.loadLayeredEnv(BIN_NAME),
+        profile: name,
+        resolvedProfile: { profile: hostOnly, installAnchor: INSTALL_ANCHOR },
+        patchFiles: [],
+        args: [],
+        packageManager: pnpm.invocation,
+      });
+      try {
+        const tools = ctx.get("tools") as { schemas(): { name: string }[] } | undefined;
+        if (tools === undefined) throw new Error(`tack: profile "${name}" mounts no tool registry`);
+        return tools.schemas().map((schema) => schema.name).sort();
+      } finally {
+        await shutdown.shutdown(0);
+      }
+    },
   };
 }

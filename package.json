@@ -10,7 +10,7 @@
     "node": ">=22.12"
   },
   "scripts": {
-    "build": "npm run build -w tack",
+    "build": "npm run build -w @tack/plugins && npm run build -w tack",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "rslint --type-check",
     "test": "npm run build && rstest run",
@@ -21,6 +21,7 @@
     "@rslint/core": "0.9.3",
     "@rstest/core": "0.12.2",
     "@types/node": "26.6.2",
+    "@types/semver": "7.8.0",
     "typescript": "7.0.2"
   }
 }

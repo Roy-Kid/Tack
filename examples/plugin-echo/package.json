@@ -1,0 +1,26 @@
+{
+  "name": "tack-plugin-echo",
+  "version": "0.1.0",
+  "description": "Reference Tack plugin: one tool, tack_echo, that returns its input",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml"
+  ],
+  "keywords": [
+    "tack-plugin"
+  ],
+  "tack": {
+    "compat": "^0.2.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

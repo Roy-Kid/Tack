@@ -23,11 +23,32 @@ tack web                 # serve the browser UI
 tack version             # Tack, runtime, and patch versions
 tack doctor              # runtime, home, and profile state
 tack doctor --dump-config
+tack doctor --tools      # tools registered in a profile
+
+tack plugin add <package|tarball|path>   # install into the default profile
+tack plugin list | enable | disable | remove
+tack plugin add <package> --profile web  # plugins for browser sessions
 ```
 
 Tack flags (`--profile`, `--patch`) come first; the first unrecognised token
 starts the app's own arguments, which are forwarded verbatim
 (`tack run --help`, `tack web --port 0 --no-open`).
+
+## Plugins
+
+A Tack plugin is an npm package that declares a bundle layer and, optionally,
+the Tack versions it supports:
+
+```json
+{
+  "keywords": ["tack-plugin"],
+  "tack": { "compat": "^0.2.0" },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+}
+```
+
+`examples/plugin-echo` is a complete one-tool plugin. Tack bundles its own
+package manager for plugin installs; nothing else needs to be on `PATH`.
 
 ## Environment
 
