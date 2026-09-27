@@ -71,7 +71,7 @@ describe("plugin lifecycle", () => {
   });
 
   it("refuses to disable a bundle from the profile template", async () => {
-    const result = await spawnTack(["plugin", "disable", "@tack/bundle-default"], { home });
+    const result = await spawnTack(["plugin", "disable", "@tack/base"], { home });
     expect(result.code).toBe(1);
   });
 

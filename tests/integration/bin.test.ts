@@ -7,13 +7,13 @@
  * diagnostic prose), so a runtime upgrade does not churn this suite.
  */
 import { beforeAll, describe, expect, it } from "@rstest/core";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PROFILE_TEMPLATES } from "../../packages/tack/src/runtime/dsh.js";
 import { BIN, REPO_ROOT, readJson, spawnTack, spawnTackUntil, tempHome } from "../helpers.js";
 
 const tackManifest = readJson<{ version: string; dependencies: Record<string, string> }>(join(REPO_ROOT, "packages", "tack", "package.json"));
-const RUNTIME_VERSION = tackManifest.dependencies["@deepseek-ai/dsh"]!;
+const RUNTIME_VERSION = tackManifest.dependencies["@deepseek-ai/dsh-app-boot"]!;
 const WEB_DEFAULT_PORT = 3080;
 
 beforeAll(() => {
@@ -72,7 +72,7 @@ describe("tack doctor", () => {
 
   it("composes the Tack bundle over the runtime's app bundle", async () => {
     const home = tempHome();
-    const patch = readFileSync(join(REPO_ROOT, "bundles", "default", "cordis.patch.yml"), "utf8");
+    const patch = readFileSync(join(REPO_ROOT, "bundles", "base", "cordis.patch.yml"), "utf8");
     const persona = /personaPrefix:\s*>-\s*\n\s+(.+)\n/.exec(patch)?.[1]?.trim();
     expect(persona, "test reads the persona from the bundle patch").toBeTruthy();
 
@@ -107,11 +107,32 @@ describe("tack run", () => {
     rmSync(home, { recursive: true, force: true });
   });
 
-  it("exits 1 with a diagnostic when no credentials are configured", async () => {
+  it("exits 1 with a Tack diagnostic when no credentials are configured", async () => {
     const home = tempHome();
     const result = await spawnTack(["run", "hi"], { home });
     expect(result.code).toBe(1);
     expect(result.stderr.trim()).not.toBe("");
+    // Tack owns the terminal: no runtime label reaches the user.
+    expect(result.stderr.split("\n").filter((line) => line.startsWith("dsh"))).toEqual([]);
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it("migrates a profile created by an earlier Tack and keeps user plugins", async () => {
+    const home = tempHome();
+    const dir = join(home, "profiles", "default");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "dsh-profile-default",
+        private: true,
+        dependencies: {},
+        dsh: { profile: { bundles: ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-headless", "@tack/bundle-default", "user-plugin"] } },
+      }),
+    );
+    expect((await spawnTack(["doctor"], { home })).code).toBe(0);
+    const manifest = readJson<{ dsh: { profile: { bundles: string[] } } }>(join(dir, "package.json"));
+    expect(manifest.dsh.profile.bundles).toEqual([...PROFILE_TEMPLATES.default!, "user-plugin"]);
     rmSync(home, { recursive: true, force: true });
   });
 });
@@ -133,6 +154,7 @@ describe("tack web", () => {
       timeoutMs: 90_000,
     });
     try {
+      expect(running.matched.startsWith("dsh")).toBe(false);
       const url = /https?:\/\/127\.0\.0\.1:\d+\/\S*/.exec(running.matched)![0];
       const parsed = new URL(url);
       expect(Number(parsed.port)).not.toBe(WEB_DEFAULT_PORT);

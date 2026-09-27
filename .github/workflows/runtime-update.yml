@@ -3,7 +3,9 @@ name: Runtime update
 # Track new DeepSeek Harness releases: re-pin every runtime package, run the
 # full suite against the new runtime, and open (or refresh) a pull request
 # that reports the outcome. A failing suite still opens the pull request, so
-# incompatibilities are visible instead of silent.
+# incompatibilities are visible instead of silent. A runtime package Tack has
+# not reviewed (scripts/runtime-closure.ts) fails verification until it is
+# classified in packages/tack/runtime-closure.json.
 
 on:
   schedule:
@@ -69,7 +71,7 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          { npm run lint && npm run typecheck && npm test; } 2>&1 | tee verify.log
+          { node scripts/runtime-closure.ts diff && npm run lint && npm run typecheck && npm test; } 2>&1 | tee verify.log
 
       - name: Write the report
         if: steps.check.outputs.update == 'true'

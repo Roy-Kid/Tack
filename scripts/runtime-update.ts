@@ -18,7 +18,7 @@ import semver from "semver";
 
 export const RUNTIME_SCOPE = "@deepseek-ai/";
 /** The package whose published versions define the runtime version. */
-export const RUNTIME_PACKAGE = "@deepseek-ai/dsh";
+export const RUNTIME_PACKAGE = "@deepseek-ai/dsh-app-boot";
 export const DEFAULT_TAG = "next";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -80,6 +80,8 @@ export function renderReport(input: ReportInput): string {
     ...input.pins.map((name) => `- \`${name}\``),
     "",
     "**Patches:** none (Tack carries no runtime patches yet).",
+    "",
+    "**Dependency closure:** new or removed runtime packages appear at the top of the verification log. A new package fails verification until it is reviewed with `node scripts/runtime-closure.ts write` and classified in `packages/tack/runtime-closure.json`.",
     "",
     "Opened by the runtime update workflow, which ran the suite itself: pull requests created with the workflow token do not trigger other workflows.",
   ];
