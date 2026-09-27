@@ -1,0 +1,14 @@
+{
+  "name": "@tack/run",
+  "version": "0.3.0",
+  "description": "Tack's one-shot app composition: Tack owns the `tack run` command line",
+  "license": "MIT",
+  "files": [
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

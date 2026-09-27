@@ -5,12 +5,18 @@
  * exports is Tack-shaped; no runtime types leak out. All DSH imports are
  * dynamic so the home binding below runs before any runtime module loads.
  */
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { reconcileTemplateBundles } from "../profiles.js";
+import { bootProfile } from "./boot.js";
+import * as models from "./models.js";
+import type { ModelSelection, ProviderModels, ProviderRoute } from "./models.js";
 import { bundledPnpm, readTackCompat, type PluginRecord } from "./plugins.js";
 
 export type { PluginRecord } from "./plugins.js";
+export type { ModelSelection, ProviderModels, ProviderRoute } from "./models.js";
 
 /** The runtime reads only this variable for its home; Tack maps TACK_HOME onto it. */
 const RUNTIME_HOME_ENV = "DSH_HOME";
@@ -36,16 +42,25 @@ export const INSTALL_ANCHOR = resolve(dirname(fileURLToPath(import.meta.url)), "
 const RUNTIME_BUNDLE_BASE = "@deepseek-ai/dsh-base";
 const RUNTIME_BUNDLE_HEADLESS = "@deepseek-ai/dsh-headless";
 const RUNTIME_BUNDLE_WEB = "@deepseek-ai/dsh-web-app";
-const TACK_BUNDLE_DEFAULT = "@tack/bundle-default";
+const TACK_BUNDLE_BASE = "@tack/base";
+const TACK_BUNDLE_RUN = "@tack/run";
+const TACK_BUNDLE_WEB = "@tack/web";
 
-/** Tack profile templates: the ordered bundle stack each named profile starts from. */
+/**
+ * Tack profile templates: the ordered bundle stack each named profile starts
+ * from. Template bundles are managed by Tack: on load, a template profile's
+ * list is reconciled to the template, keeping user-added bundles after it.
+ */
 export const PROFILE_TEMPLATES: Readonly<Record<string, readonly string[]>> = {
-  default: [RUNTIME_BUNDLE_BASE, RUNTIME_BUNDLE_HEADLESS, TACK_BUNDLE_DEFAULT],
-  web: [RUNTIME_BUNDLE_BASE, RUNTIME_BUNDLE_WEB, TACK_BUNDLE_DEFAULT],
+  default: [RUNTIME_BUNDLE_BASE, RUNTIME_BUNDLE_HEADLESS, TACK_BUNDLE_BASE, TACK_BUNDLE_RUN],
+  web: [RUNTIME_BUNDLE_BASE, RUNTIME_BUNDLE_WEB, TACK_BUNDLE_BASE, TACK_BUNDLE_WEB],
 };
 
-/** The runtime's app bundles. A profile without them boots only its host plane. */
-const APP_BUNDLES: readonly string[] = [RUNTIME_BUNDLE_HEADLESS, RUNTIME_BUNDLE_WEB];
+/** The app bundles: the runtime's and Tack's. Rows they insert are switched off in host-plane boots. */
+const APP_BUNDLES: readonly string[] = [RUNTIME_BUNDLE_HEADLESS, RUNTIME_BUNDLE_WEB, TACK_BUNDLE_RUN, TACK_BUNDLE_WEB];
+
+/** Credentials are shared by every profile; this profile's host plane serves the store. */
+const CREDENTIAL_PROFILE = "default";
 
 /** Row ids every Tack composition must carry; absence means the runtime cannot serve. */
 export const REQUIRED_ROW_IDS: readonly string[] = ["agent-loop", "system-prompt"];
@@ -68,6 +83,14 @@ export interface ProfileInfo {
 export interface BootOptions {
   patchFiles: readonly string[];
   args: readonly string[];
+  /** A model for this run only; saved settings are not touched. */
+  model?: ModelSelection;
+}
+
+export interface CredentialStatus {
+  ref: string;
+  configured: boolean;
+  source?: string;
 }
 
 export interface PluginCommandResult {
@@ -107,6 +130,17 @@ export interface Runtime {
    * registry. The profile boots without its app, so nothing runs or serves.
    */
   listTools(name: string): Promise<string[]>;
+  currentModel(name: string): Promise<ModelSelection>;
+  listModels(name: string, provider?: string): Promise<ProviderModels[]>;
+  /** Save the default model in a profile; `listed` is false when the provider does not list the model. */
+  useModel(name: string, selection: ModelSelection): Promise<{ listed: boolean }>;
+  /** Routable providers, and the routes Tack configured through the multi-provider adapter. */
+  listRoutes(name: string): Promise<{ routable: { id: string; name: string }[]; configured: Record<string, ProviderRoute> }>;
+  addRoute(name: string, id: string, route: ProviderRoute): Promise<void>;
+  removeRoute(name: string, id: string): Promise<boolean>;
+  /** Store a credential in Tack's shared credential file. */
+  setCredential(ref: string, value: string): Promise<void>;
+  credentialStatus(refs: readonly string[]): Promise<CredentialStatus[]>;
 }
 
 /**
@@ -128,13 +162,17 @@ export function bindHome(
 
 /** Load the runtime. Imports the runtime lazily so {@link bindHome} takes effect first. */
 export async function loadRuntime(tackHome: string): Promise<Runtime> {
-  const [profileBoot, appBoot, homePaths, pluginOps, atomicWrite] = await Promise.all([
-    import("@deepseek-ai/dsh/profile-boot"),
+  const [appBoot, homePaths, pluginOps, atomicWrite, cmdline, httpProxy, launchEnvironment] = await Promise.all([
     import("@deepseek-ai/dsh-app-boot"),
     import("@deepseek-ai/dsh-home-paths"),
     import("@deepseek-ai/dsh-plugin-manager/operations"),
     import("@deepseek-ai/dsh-atomic-write"),
+    import("@deepseek-ai/dsh-cmdline"),
+    import("@deepseek-ai/dsh-http-proxy"),
+    import("@deepseek-ai/dsh-launch-environment"),
   ]);
+  const credentials = await import("@deepseek-ai/dsh-credentials");
+  const bootModules = { appBoot, cmdline, httpProxy, launchEnvironment };
   const pnpm = bundledPnpm();
   const boundHome = homePaths.resolveDshHome();
   if (resolve(boundHome) !== resolve(tackHome)) {
@@ -164,6 +202,13 @@ export async function loadRuntime(tackHome: string): Promise<Runtime> {
       }
       mkdirSync(dir, { recursive: true });
       appBoot.initProfile(dir, template);
+    } else {
+      const template = PROFILE_TEMPLATES[name];
+      if (template !== undefined) {
+        const manifest = appBoot.readProfileManifest(BIN_NAME, dir);
+        const next = reconcileTemplateBundles(manifest.dsh?.profile?.bundles ?? [], template);
+        if (next !== undefined) appBoot.writeProfileBundles(dir, manifest, next);
+      }
     }
     const root = join(dir, PROFILE_ROOT_FILENAME);
     if (!existsSync(root)) writeFileSync(root, PROFILE_ROOT_CONFIG);
@@ -174,6 +219,67 @@ export async function loadRuntime(tackHome: string): Promise<Runtime> {
     ...profile.layers.map((layer) => layer.patches),
     profile.patches,
   ];
+
+  const start = (name: string, profile: ReturnType<typeof appBoot.loadProfileDirectory>, patchFiles: readonly string[], args: readonly string[]) =>
+    bootProfile(bootModules, {
+      binName: BIN_NAME,
+      name,
+      profile,
+      installAnchor: INSTALL_ANCHOR,
+      home: tackHome,
+      patchFiles,
+      args,
+      packageManager: pnpm.invocation,
+      rootFilename: PROFILE_ROOT_FILENAME,
+      rootConfig: PROFILE_ROOT_CONFIG,
+    });
+
+  /**
+   * Boot a profile with its app switched off and run `use` on the booted
+   * context, then shut down. The full bundle stack is kept, so the runtime's
+   * own re-composition (settings writes reconcile against the profile's files
+   * plus these overlays) sees exactly what booted. The overlay disables every
+   * row an app bundle inserts, Tack's startup rows, and live reload: nothing
+   * runs, serves, or reloads mid-command.
+   */
+  const withHostPlane = async <T>(name: string, use: (ctx: { get(service: string): unknown }) => Promise<T> | T): Promise<T> => {
+    const loaded = load(name);
+    const ids = new Set<string>(["hmr"]);
+    for (const layer of loaded.layers) {
+      if (!APP_BUNDLES.includes(layer.packageName)) continue;
+      for (const patch of layer.patches as { insert?: { id?: string }[] }[]) {
+        for (const entry of patch.insert ?? []) if (typeof entry.id === "string") ids.add(entry.id);
+      }
+    }
+    const file = join(mkdtempSync(join(tmpdir(), "tack-host-")), "host-plane.patch.yml");
+    writeFileSync(file, [...ids].map((id) => `- id: ${JSON.stringify(id)}\n  disabled: true\n`).join(""));
+    const { ctx, shutdown } = await start(name, loaded, [file], []);
+    try {
+      return await use(ctx as unknown as { get(service: string): unknown });
+    } finally {
+      await shutdown.shutdown(0);
+    }
+  };
+
+  /** A one-run overlay pinning the default model; the saved profile layer is untouched. */
+  const modelOverlay = (selection: ModelSelection): string => {
+    const dir = mkdtempSync(join(tmpdir(), "tack-model-"));
+    const file = join(dir, "model.patch.yml");
+    const config = { provider: selection.provider, model: selection.model };
+    writeFileSync(file, `- id: agent-default-model\n  config: ${JSON.stringify(config)}\n`);
+    return file;
+  };
+
+  const credentialsService = (ctx: models.ServiceGetter) => {
+    const credentials = ctx.get("credentials") as
+      | {
+          set(ref: unknown, value: string): Promise<void>;
+          describe(ref: unknown): Promise<{ configured: boolean; source?: string }>;
+        }
+      | undefined;
+    if (credentials === undefined) throw new Error("tack: the credential store is not available");
+    return credentials;
+  };
 
   const pluginLocation = (dir: string) => ({ binName: BIN_NAME, profileDir: dir, installAnchor: INSTALL_ANCHOR });
   const LOCK_WAIT_MS = 120_000;
@@ -212,15 +318,9 @@ export async function loadRuntime(tackHome: string): Promise<Runtime> {
       return appBoot.renderConfigDump(BIN_NAME, join(profile.dir, PROFILE_ROOT_FILENAME), layers);
     },
     boot: async (name, options) => {
-      const profile = load(name);
-      await profileBoot.runProfile({
-        environment: appBoot.loadLayeredEnv(BIN_NAME),
-        profile: name,
-        resolvedProfile: { profile, installAnchor: INSTALL_ANCHOR },
-        patchFiles: options.patchFiles,
-        args: options.args,
-        packageManager: pnpm.invocation,
-      });
+      const patchFiles = [...options.patchFiles];
+      if (options.model !== undefined) patchFiles.push(modelOverlay(options.model));
+      await start(name, load(name), patchFiles, options.args);
     },
     isStartupError: (error): error is Error => error instanceof appBoot.StartupError,
     pluginCommand: async (name, verb, specs) => {
@@ -278,25 +378,33 @@ export async function loadRuntime(tackHome: string): Promise<Runtime> {
         { waitMs: LOCK_WAIT_MS },
       );
     },
-    listTools: async (name) => {
-      const loaded = load(name);
-      // Boot the host plane only: drop the app bundles so no runner starts and nothing serves.
-      const hostOnly = { ...loaded, layers: loaded.layers.filter((layer) => !APP_BUNDLES.includes(layer.packageName)) };
-      const { ctx, shutdown } = await profileBoot.runProfile({
-        environment: appBoot.loadLayeredEnv(BIN_NAME),
-        profile: name,
-        resolvedProfile: { profile: hostOnly, installAnchor: INSTALL_ANCHOR },
-        patchFiles: [],
-        args: [],
-        packageManager: pnpm.invocation,
-      });
-      try {
+    currentModel: (name) => withHostPlane(name, (ctx) => models.currentSelection(ctx)),
+    listModels: (name, provider) => withHostPlane(name, (ctx) => models.listProviderModels(ctx, provider)),
+    useModel: (name, selection) => withHostPlane(name, (ctx) => models.saveSelection(ctx, selection)),
+    listRoutes: (name) =>
+      withHostPlane(name, (ctx) => {
+        const llm = ctx.get("llm") as { listProviders(): { id: string; name: string }[] } | undefined;
+        return { routable: llm?.listProviders() ?? [], configured: models.configuredRoutes(ctx) };
+      }),
+    addRoute: (name, id, route) => withHostPlane(name, (ctx) => models.setRoute(ctx, id, route)),
+    removeRoute: (name, id) => withHostPlane(name, (ctx) => models.removeRoute(ctx, id)),
+    setCredential: (ref, value) =>
+      withHostPlane(CREDENTIAL_PROFILE, (ctx) => credentialsService(ctx).set(credentials.credentialRef(ref), value)),
+    credentialStatus: (refs) =>
+      withHostPlane(CREDENTIAL_PROFILE, async (ctx) => {
+        const store = credentialsService(ctx);
+        const result: CredentialStatus[] = [];
+        for (const ref of refs) {
+          const info = await store.describe(credentials.credentialRef(ref));
+          result.push({ ref, configured: info.configured, ...(info.source !== undefined && { source: info.source }) });
+        }
+        return result;
+      }),
+    listTools: (name) =>
+      withHostPlane(name, (ctx) => {
         const tools = ctx.get("tools") as { schemas(): { name: string }[] } | undefined;
         if (tools === undefined) throw new Error(`tack: profile "${name}" mounts no tool registry`);
         return tools.schemas().map((schema) => schema.name).sort();
-      } finally {
-        await shutdown.shutdown(0);
-      }
-    },
+      }),
   };
 }

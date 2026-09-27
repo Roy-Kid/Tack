@@ -93,3 +93,35 @@ export function spawnTackUntil(args: readonly string[], options: { home: string;
     });
   });
 }
+
+export interface DumpRow {
+  id: string;
+  name?: string;
+  disabled?: string;
+  lines: string[];
+}
+
+/** Top-level rows of a `tack doctor --dump-config` document (id, module name, disabled expression). */
+export function parseDumpRows(text: string): DumpRow[] {
+  const rows: DumpRow[] = [];
+  let current: DumpRow | undefined;
+  for (const line of text.split("\n")) {
+    const id = /^- id: (.+)$/.exec(line);
+    if (id) {
+      current = { id: id[1]!.replace(/^['"]|['"]$/g, ""), lines: [] };
+      rows.push(current);
+      continue;
+    }
+    if (current === undefined) continue;
+    if (!line.startsWith("  ")) {
+      if (line.trim() !== "" && !line.startsWith("#")) current = undefined;
+      continue;
+    }
+    current.lines.push(line);
+    const name = /^ {2}name: (.+)$/.exec(line);
+    if (name) current.name = name[1]!.replace(/^['"]|['"]$/g, "");
+    const disabled = /^ {2}disabled: (.+)$/.exec(line);
+    if (disabled) current.disabled = disabled[1]!;
+  }
+  return rows;
+}

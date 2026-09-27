@@ -1,0 +1,30 @@
+# Tack's web app composition, over the runtime's web bundle.
+
+# ── Command line ─────────────────────────────────────────────────────────────
+# Tack owns `tack web --help` and its usage errors: the runtime's startup row
+# is disabled and a Tack row providing the same `webStartup` service inserted.
+- id: web-startup
+  disabled: true
+
+- insert:
+    - id: tack-web-startup
+      name: '@tack/plugins/web-startup'
+
+# ── DeepSeek product policy: off ─────────────────────────────────────────────
+# DeepSeek account page and its host controller.
+- id: account-controller
+  disabled: true
+
+- id: ui-settings-account
+  disabled: true
+
+# Message feedback (like/dislike records).
+- id: message-feedback
+  disabled: true
+
+- id: ui-message-feedback
+  disabled: true
+
+# The upstream brand. Tack's own chrome replaces it.
+- id: ui-brand-official
+  disabled: true

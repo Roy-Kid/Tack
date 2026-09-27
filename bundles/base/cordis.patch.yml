@@ -1,0 +1,47 @@
+# Tack base policy. Applied after the runtime's base and app bundles, so rows
+# here override theirs by id. A patched `config` replaces the whole row
+# config, so every key the row needs is restated. Only rows every Tack
+# profile mounts are patched here; each app's own rows are patched by that
+# app's Tack bundle (@tack/run, @tack/web).
+
+# ── Persona ──────────────────────────────────────────────────────────────────
+- id: system-prompt
+  config:
+    personaPrefix: >-
+      You are Tack, a coding agent powered by the {{model}} model.
+    personaSuffix: Your working directory is {{cwd}}.
+
+# ── Model default ────────────────────────────────────────────────────────────
+# DeepSeek is Tack's default provider and stays switchable: `tack model use`
+# and `tack provider add` write each profile's own layer over this row.
+- id: agent-default-model
+  config:
+    provider: deepseek-official
+    model: deepseek-flash
+
+# ── DeepSeek product policy: off ─────────────────────────────────────────────
+# The DeepSeek provider itself stays (llm-deepseek, web-search-deepseek).
+# What is off is DeepSeek's product behaviour around it.
+
+# Session telemetry export to DeepSeek's collector.
+- id: session-telemetry-otel
+  disabled: true
+
+# Session-log upload inside official API requests.
+- id: session-log-deepseek
+  disabled: true
+
+# Active plugin list upload inside official API requests.
+- id: plugin-package-inventory-deepseek
+  disabled: true
+
+# DeepSeek account sign-in and its account-backed model route.
+- id: deepseek-account
+  disabled: true
+
+- id: llm-deepseek-account
+  disabled: true
+
+# /feedback, which triggers the telemetry upload.
+- id: command-feedback
+  disabled: true

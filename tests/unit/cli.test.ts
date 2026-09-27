@@ -85,3 +85,50 @@ describe("parseTackArgs plugin", () => {
     expect(parseTackArgs(["doctor", "--tools"])).toEqual({ mode: "doctor", profile: DEFAULT_RUN_PROFILE, dumpConfig: false, tools: true });
   });
 });
+
+describe("parseTackArgs models", () => {
+  it("parses model commands", () => {
+    expect(parseTackArgs(["model"])).toEqual({ mode: "model", action: "show" });
+    expect(parseTackArgs(["model", "list", "--provider", "anthropic"])).toEqual({ mode: "model", action: "list", provider: "anthropic" });
+    expect(parseTackArgs(["model", "use", "openrouter/meta/llama", "--profile", "web"])).toEqual({
+      mode: "model",
+      action: "use",
+      selection: "openrouter/meta/llama",
+      profile: "web",
+    });
+  });
+
+  it("parses provider routes, built-in and custom", () => {
+    expect(parseTackArgs(["provider", "add", "anthropic", "--api-key-env", "ANTHROPIC_API_KEY"])).toEqual({
+      mode: "provider",
+      action: "add",
+      id: "anthropic",
+      route: { apiKeyEnv: "ANTHROPIC_API_KEY" },
+    });
+    expect(
+      parseTackArgs(["provider", "add", "gw", "--api", "openai-completions", "--base-url", "https://x/v1", "--model", "m1", "--model", "m2"]),
+    ).toEqual({
+      mode: "provider",
+      action: "add",
+      id: "gw",
+      route: { api: "openai-completions", baseURL: "https://x/v1", models: [{ id: "m1" }, { id: "m2" }] },
+    });
+  });
+
+  it("rejects an incomplete or unknown custom endpoint", () => {
+    expect(() => parseTackArgs(["provider", "add", "gw", "--base-url", "https://x/v1"])).toThrow(CommanderError);
+    expect(() => parseTackArgs(["provider", "add", "gw", "--api", "grpc", "--base-url", "u", "--model", "m"])).toThrow(CommanderError);
+  });
+
+  it("parses auth and run --model", () => {
+    expect(parseTackArgs(["auth", "set", "OPENAI_API_KEY"])).toEqual({ mode: "auth", action: "set", ref: "OPENAI_API_KEY" });
+    expect(parseTackArgs(["auth"])).toEqual({ mode: "auth", action: "status", refs: [] });
+    expect(parseTackArgs(["run", "--model", "openai/gpt-5", "hi"])).toEqual({
+      mode: "run",
+      profile: DEFAULT_RUN_PROFILE,
+      patches: [],
+      args: ["hi"],
+      model: "openai/gpt-5",
+    });
+  });
+});

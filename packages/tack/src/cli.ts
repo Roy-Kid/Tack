@@ -9,6 +9,7 @@
  * app's help rather than Tack's.
  */
 import { Command, CommanderError, InvalidArgumentError } from "commander";
+import type { ModelInvocation } from "./models.js";
 import type { PluginAction } from "./plugin.js";
 
 export type Invocation =
@@ -16,13 +17,17 @@ export type Invocation =
   | { mode: "version" }
   | { mode: "doctor"; profile: string; dumpConfig: boolean; tools: boolean }
   | { mode: "plugin"; action: PluginAction; profile: string; names: string[] }
-  | { mode: "run"; profile: string; patches: string[]; args: string[] }
+  | { mode: "run"; profile: string; patches: string[]; args: string[]; model?: string }
+  | ModelInvocation
   | { mode: "web"; profile: string; patches: string[]; args: string[] };
 
 export const DEFAULT_RUN_PROFILE = "default";
 export const DEFAULT_WEB_PROFILE = "web";
 
 const collect = (value: string, previous: string[] = []): string[] => [...previous, value];
+
+const optionalProfile = (options: { profile?: string }): { profile?: string } =>
+  options.profile !== undefined ? { profile: options.profile } : {};
 
 function selectProfile(value: string, previous: string | undefined): string {
   if (previous !== undefined) throw new InvalidArgumentError("select a profile only once");
@@ -45,6 +50,9 @@ Examples:
   tack doctor --tools                 list the tools registered in the default profile
   tack plugin add <package>           install a plugin into the default profile
   tack plugin list --profile web      list the web profile's plugins
+  tack model use anthropic/claude-sonnet-4-5
+                                      switch the default model in every Tack profile
+  tack run --model openai/gpt-5 "task"   use another model for one run
 `;
 
 /** Build the commander program. `resolved` receives the parsed invocation. */
@@ -73,12 +81,93 @@ export function buildProgram(resolve: (invocation: Invocation) => void): Command
       .argument("[args...]", "arguments for the app (see: tack " + name + " --help)")
       .option("--profile <name>", `Tack profile to boot (default: ${defaultProfile})`, selectProfile)
       .option("--patch <path>", "extra patch overlay applied after the profile layer (repeatable)", collect)
-      .action((args: string[], options: { profile?: string; patch?: string[] }) => {
-        resolve({ mode, profile: options.profile ?? defaultProfile, patches: options.patch ?? [], args });
+      .action((args: string[], options: { profile?: string; patch?: string[]; model?: string }) => {
+        const base = { profile: options.profile ?? defaultProfile, patches: options.patch ?? [], args };
+        resolve(mode === "run" && options.model !== undefined ? { mode, ...base, model: options.model } : { mode, ...base });
       });
 
-  appCommand("run", "answer one task and exit", DEFAULT_RUN_PROFILE, "run");
+  appCommand("run", "answer one task and exit", DEFAULT_RUN_PROFILE, "run").option(
+    "--model <provider/model>",
+    "use this model for this run only (saved settings are not changed)",
+  );
   appCommand("web", "serve the browser UI", DEFAULT_WEB_PROFILE, "web");
+
+  const profileOption = "--profile <name>";
+  const profileHelp = "apply to one Tack profile (default: every Tack profile)";
+  const model = program.command("model").description("show, list, and switch the default model");
+  model
+    .command("show", { isDefault: true })
+    .description("show the default model of each Tack profile")
+    .option(profileOption, "show one Tack profile", selectProfile)
+    .action((options: { profile?: string }) => resolve({ mode: "model", action: "show", ...optionalProfile(options) }));
+  model
+    .command("list")
+    .description("list configured providers and their models")
+    .option("--provider <id>", "only this provider")
+    .option(profileOption, `profile to read (default: ${DEFAULT_RUN_PROFILE})`, selectProfile)
+    .action((options: { profile?: string; provider?: string }) =>
+      resolve({ mode: "model", action: "list", ...optionalProfile(options), ...(options.provider !== undefined && { provider: options.provider }) }),
+    );
+  model
+    .command("use")
+    .description("set the default model, e.g. `tack model use anthropic/claude-sonnet-4-5`")
+    .argument("<provider/model>")
+    .option(profileOption, profileHelp, selectProfile)
+    .action((selection: string, options: { profile?: string }) =>
+      resolve({ mode: "model", action: "use", selection, ...optionalProfile(options) }),
+    );
+
+  const provider = program.command("provider").description("configure model providers (DeepSeek is built in)");
+  provider
+    .command("list", { isDefault: true })
+    .description("list routable providers in each Tack profile")
+    .option(profileOption, "list one Tack profile", selectProfile)
+    .action((options: { profile?: string }) => resolve({ mode: "provider", action: "list", ...optionalProfile(options) }));
+  provider
+    .command("add")
+    .description("add a provider route: a built-in catalog (anthropic, openai, google, openrouter, …) or a custom endpoint")
+    .argument("<id>")
+    .option("--api-key-env <ref>", "credential reference holding the key, e.g. ANTHROPIC_API_KEY")
+    .option("--display-name <name>", "name shown in selectors")
+    .option("--api <protocol>", "custom endpoint protocol: openai-completions, openai-responses, anthropic-messages")
+    .option("--base-url <url>", "custom endpoint base URL")
+    .option("--model <id>", "model id offered by a custom endpoint (repeatable)", collect)
+    .option(profileOption, profileHelp, selectProfile)
+    .action((id: string, options: { apiKeyEnv?: string; displayName?: string; api?: string; baseUrl?: string; model?: string[]; profile?: string }) => {
+      const custom = options.api !== undefined || options.baseUrl !== undefined || options.model !== undefined;
+      if (custom && (options.api === undefined || options.baseUrl === undefined || options.model === undefined)) {
+        throw new InvalidArgumentError("a custom endpoint needs --api, --base-url, and at least one --model");
+      }
+      if (options.api !== undefined && !["openai-completions", "openai-responses", "anthropic-messages"].includes(options.api)) {
+        throw new InvalidArgumentError(`unknown --api "${options.api}"`);
+      }
+      const route = {
+        ...(options.apiKeyEnv !== undefined && { apiKeyEnv: options.apiKeyEnv }),
+        ...(options.displayName !== undefined && { displayName: options.displayName }),
+        ...(options.api !== undefined && { api: options.api as "openai-completions" | "openai-responses" | "anthropic-messages" }),
+        ...(options.baseUrl !== undefined && { baseURL: options.baseUrl }),
+        ...(options.model !== undefined && { models: options.model.map((modelId) => ({ id: modelId })) }),
+      };
+      resolve({ mode: "provider", action: "add", id, route, ...optionalProfile(options) });
+    });
+  provider
+    .command("remove")
+    .description("remove a provider route added with `tack provider add`")
+    .argument("<id>")
+    .option(profileOption, profileHelp, selectProfile)
+    .action((id: string, options: { profile?: string }) => resolve({ mode: "provider", action: "remove", id, ...optionalProfile(options) }));
+
+  const auth = program.command("auth").description("store and inspect provider keys (shared by every Tack profile)");
+  auth
+    .command("set")
+    .description("store a key read from stdin, e.g. `printf %s \"$KEY\" | tack auth set ANTHROPIC_API_KEY`")
+    .argument("<ref>")
+    .action((ref: string) => resolve({ mode: "auth", action: "set", ref }));
+  auth
+    .command("status", { isDefault: true })
+    .description("show which keys are configured (values are never printed)")
+    .argument("[ref...]")
+    .action((refs: string[] | undefined) => resolve({ mode: "auth", action: "status", refs: refs ?? [] }));
 
   program
     .command("doctor")
