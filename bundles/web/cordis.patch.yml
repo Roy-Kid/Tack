@@ -28,3 +28,24 @@
 # The upstream brand. Tack's own chrome replaces it.
 - id: ui-brand-official
   disabled: true
+
+# ── Tack chrome ──────────────────────────────────────────────────────────────
+- insert:
+    - id: tack-web-chrome
+      name: '@tack/web-chrome'
+      # Settings: product, brand, Tailwind 4 theme, splash, welcome, version.
+      # `tack web --chrome <file>` or `$TACK_HOME/web-chrome.json` fills this
+      # row's config for one run; a profile patch can set it permanently.
+      config: {}
+
+# Runtime rows driven by the chrome settings. These are defaults at the bundle
+# layer: a choice the user saves in settings lands in the profile layer and wins.
+- id: ui-theme
+  inject: [tackChrome]
+  config:
+    preference: !!js ctx.tackChrome.theme.appearance
+
+- id: ui-settings-models
+  inject: [tackChrome]
+  config:
+    credentialOnboarding: !!js ctx.tackChrome.onboarding.credentialPrompt

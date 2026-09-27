@@ -5,7 +5,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CommanderError } from "commander";
 import { helpText, parseTackArgs } from "./cli.js";
-import { formatVersion, runApp } from "./commands.js";
+import { isChromeConfigError } from "./chrome.js";
+import { formatVersion, runApp, runWeb } from "./commands.js";
 import { runModelAction } from "./models.js";
 import { runPluginAction } from "./plugin.js";
 import { collectDoctorReport, doctorExitCode, formatDoctorReport } from "./doctor.js";
@@ -104,9 +105,14 @@ async function main(): Promise<void> {
     case "run":
     case "web":
       try {
-        await runApp(runtime, invocation);
+        if (invocation.mode === "web") {
+          const code = await runWeb(runtime, invocation, (text) => process.stdout.write(text));
+          if (code !== undefined) process.exitCode = code;
+        } else {
+          await runApp(runtime, invocation);
+        }
       } catch (error) {
-        if (runtime.isStartupError(error)) {
+        if (runtime.isStartupError(error) || isChromeConfigError(error)) {
           process.stderr.write(`${error.message}\n`);
           process.exit(1);
         }

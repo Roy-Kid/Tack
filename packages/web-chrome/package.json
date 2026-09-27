@@ -1,0 +1,37 @@
+{
+  "name": "@tack/web-chrome",
+  "version": "0.4.0",
+  "description": "Tack's web chrome: product name, brand, title, splash, and a Tailwind 4 theme over the runtime's web UI",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./config": "./lib/config.js",
+    "./file": "./lib/file.js",
+    "./theme": "./lib/theme.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "assets"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "rslib build"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-app-boot": "0.1.7-rc.2"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    }
+  }
+}

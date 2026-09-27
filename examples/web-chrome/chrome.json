@@ -1,0 +1,13 @@
+{
+  "product": { "name": "Acme Assistant", "shortName": "Acme", "titleSeparator": " · " },
+  "brand": { "logo": "logo.svg", "logoDark": "logo-dark.svg" },
+  "theme": { "css": "theme.css", "appearance": "system" },
+  "splash": { "wordmark": "ACME", "hint": "Starting Acme Assistant…" },
+  "welcome": {
+    "enabled": true,
+    "title": "Welcome to Acme Assistant",
+    "body": "Acme Assistant runs on your machine and works in the folders you open.\n\nConnect a model provider in Settings to get started."
+  },
+  "version": { "show": true },
+  "onboarding": { "credentialPrompt": true }
+}

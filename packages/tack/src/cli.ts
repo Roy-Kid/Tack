@@ -19,7 +19,7 @@ export type Invocation =
   | { mode: "plugin"; action: PluginAction; profile: string; names: string[] }
   | { mode: "run"; profile: string; patches: string[]; args: string[]; model?: string }
   | ModelInvocation
-  | { mode: "web"; profile: string; patches: string[]; args: string[] };
+  | { mode: "web"; profile: string; patches: string[]; args: string[]; chrome?: string; check: boolean };
 
 export const DEFAULT_RUN_PROFILE = "default";
 export const DEFAULT_WEB_PROFILE = "web";
@@ -36,8 +36,9 @@ function selectProfile(value: string, previous: string | undefined): string {
 }
 
 const HELP_AFTER = `
-Tack flags (--profile, --patch) come first; the first unrecognised token starts
-the app's own arguments, which are forwarded verbatim.
+Tack flags (--profile, --patch; web also --chrome, --check) come first; the
+first unrecognised token starts the app's own arguments, which are forwarded
+verbatim.
 
 Examples:
   tack run "run the tests"            answer one task, print the result, exit
@@ -45,6 +46,9 @@ Examples:
   tack run --help                     the task runner's own flags
   tack web                            serve the browser UI
   tack web --port 0 --no-open         let the OS pick a port, do not open a browser
+  tack web --chrome chrome.json       serve with your product name, brand, and Tailwind 4 theme
+  tack web --chrome chrome.json --check
+                                      validate chrome settings and print the compiled theme
   tack doctor                         report runtime, home, and profile state
   tack doctor --dump-config           print the composed default profile
   tack doctor --tools                 list the tools registered in the default profile
@@ -81,16 +85,22 @@ export function buildProgram(resolve: (invocation: Invocation) => void): Command
       .argument("[args...]", "arguments for the app (see: tack " + name + " --help)")
       .option("--profile <name>", `Tack profile to boot (default: ${defaultProfile})`, selectProfile)
       .option("--patch <path>", "extra patch overlay applied after the profile layer (repeatable)", collect)
-      .action((args: string[], options: { profile?: string; patch?: string[]; model?: string }) => {
+      .action((args: string[], options: { profile?: string; patch?: string[]; model?: string; chrome?: string; check?: boolean }) => {
         const base = { profile: options.profile ?? defaultProfile, patches: options.patch ?? [], args };
-        resolve(mode === "run" && options.model !== undefined ? { mode, ...base, model: options.model } : { mode, ...base });
+        if (mode === "web") {
+          resolve({ mode, ...base, ...(options.chrome !== undefined && { chrome: options.chrome }), check: options.check === true });
+          return;
+        }
+        resolve(options.model !== undefined ? { mode, ...base, model: options.model } : { mode, ...base });
       });
 
   appCommand("run", "answer one task and exit", DEFAULT_RUN_PROFILE, "run").option(
     "--model <provider/model>",
     "use this model for this run only (saved settings are not changed)",
   );
-  appCommand("web", "serve the browser UI", DEFAULT_WEB_PROFILE, "web");
+  appCommand("web", "serve the browser UI", DEFAULT_WEB_PROFILE, "web")
+    .option("--chrome <file>", "web chrome settings (JSON) for this run (default: $TACK_HOME/web-chrome.json when present)")
+    .option("--check", "validate the chrome settings, print them and the compiled theme, and exit");
 
   const profileOption = "--profile <name>";
   const profileHelp = "apply to one Tack profile (default: every Tack profile)";

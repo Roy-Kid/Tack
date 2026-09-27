@@ -1,7 +1,7 @@
 import { defineConfig } from "@rstest/core";
 
 export default defineConfig({
-  include: ["tests/**/*.test.ts"],
+  include: ["tests/unit/**/*.test.ts", "tests/integration/**/*.test.ts"],
   testEnvironment: "node",
   testTimeout: 120_000,
   hookTimeout: 60_000,

@@ -17,7 +17,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Build first: the CLI type-checks against @tack/web-chrome's generated declarations.
+      - run: npm run build
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm run build
       - run: npm test
+      - name: Browser tests (web chrome)
+        run: |
+          npx playwright-core install --with-deps chromium
+          npm run test:e2e
