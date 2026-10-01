@@ -14,6 +14,17 @@ export const LABELS: readonly (readonly [string, string])[] = [
   ["dsh: ", "tack: "],
 ];
 
+/**
+ * Tack's next step for a runtime line, printed on its own line after it.
+ * A missing provider key points at Tack's command, not the runtime's services.
+ */
+export function hintFor(line: string): string | undefined {
+  if (!line.includes("MISSING_CREDENTIAL")) return undefined;
+  const ref = /\b([A-Z][A-Z0-9_]*(?:API_KEY|_KEY|_TOKEN))\b/.exec(line)?.[1];
+  if (ref === undefined) return undefined;
+  return `tack: set the key with \`tack auth set ${ref}\` (reads it from stdin), or export ${ref}\n`;
+}
+
 export interface LineState {
   atLineStart: boolean;
 }
@@ -36,6 +47,7 @@ export function relabelChunk(chunk: string, state: LineState, labels: readonly (
       }
     }
     out += segment;
+    if (newline !== -1) out += hintFor(segment) ?? "";
     atLineStart = newline !== -1;
     index = end;
   }

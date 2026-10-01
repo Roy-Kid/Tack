@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@rstest/core";
-import { relabelChunk, type LineState } from "../../packages/tack/src/terminal.js";
+import { hintFor, relabelChunk, type LineState } from "../../packages/tack/src/terminal.js";
 
 const run = (chunks: string[]) => {
   const state: LineState = { atLineStart: true };
@@ -21,5 +21,20 @@ describe("relabelChunk", () => {
   it("passes unlabelled output through unchanged", () => {
     const json = '{"type":"status","phase":"turn_start"}\n';
     expect(run([json, "plain text"])).toBe(json + "plain text");
+  });
+});
+
+describe("hintFor", () => {
+  it("points a missing provider key at tack auth set", () => {
+    const line = 'dsh: MISSING_CREDENTIAL: no API key for provider route "x"; export DEEPSEEK_API_KEY\n';
+    expect(hintFor(line)).toContain("tack auth set DEEPSEEK_API_KEY");
+    const out = relabelChunk(line, { atLineStart: true });
+    expect(out.split("\n").filter(Boolean)).toHaveLength(2);
+    expect(out.startsWith("tack: MISSING_CREDENTIAL")).toBe(true);
+  });
+
+  it("adds nothing to other lines", () => {
+    expect(hintFor("dsh: something else DEEPSEEK_API_KEY\n")).toBeUndefined();
+    expect(relabelChunk("an answer\n", { atLineStart: true })).toBe("an answer\n");
   });
 });

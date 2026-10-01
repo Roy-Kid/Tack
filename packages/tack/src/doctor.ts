@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import type { ProfileInfo, Runtime } from "./runtime/dsh.js";
+import type { ProfileInfo, Readiness, Runtime } from "./runtime/dsh.js";
 
 export interface DoctorReport {
   tack: string;
@@ -8,7 +8,8 @@ export interface DoctorReport {
   home: string;
   homeExists: boolean;
   profiles: ProfileInfo[];
-  apiKeySet: boolean;
+  /** The default model and its key; absent when the profile could not be booted. */
+  readiness?: Readiness;
   packageManager?: { name: string; version: string };
   compose?: { profile: string; rows: number; missing: string[] };
   error?: string;
@@ -19,19 +20,16 @@ export interface DoctorContext {
   home: string;
   profile: string;
   requiredRowIds: readonly string[];
-  env?: NodeJS.ProcessEnv;
   nodeVersion?: string;
 }
 
-export function collectDoctorReport(runtime: Runtime | undefined, context: DoctorContext): DoctorReport {
-  const env = context.env ?? process.env;
+export async function collectDoctorReport(runtime: Runtime | undefined, context: DoctorContext): Promise<DoctorReport> {
   const report: DoctorReport = {
     tack: context.tackVersion,
     node: context.nodeVersion ?? process.version,
     home: context.home,
     homeExists: existsSync(context.home),
     profiles: [],
-    apiKeySet: Boolean(env.DEEPSEEK_API_KEY),
   };
   if (runtime === undefined) {
     report.error = "runtime not loaded";
@@ -48,6 +46,7 @@ export function collectDoctorReport(runtime: Runtime | undefined, context: Docto
       rows: ids.length,
       missing: context.requiredRowIds.filter((id) => !ids.includes(id)),
     };
+    if (report.compose.missing.length === 0) report.readiness = await runtime.readiness(context.profile);
   } catch (error) {
     report.error = error instanceof Error ? error.message : String(error);
   }
@@ -60,7 +59,11 @@ export function formatDoctorReport(report: DoctorReport): string {
   lines.push(`Runtime     ${report.runtime ? `${report.runtime.name} ${report.runtime.version}` : "not loaded"}`);
   lines.push(`Node        ${report.node}`);
   lines.push(`TACK_HOME   ${report.home}${report.homeExists ? "" : " (missing)"}`);
-  lines.push(`DEEPSEEK_API_KEY: ${report.apiKeySet ? "set" : "not set"}`);
+  if (report.readiness) {
+    const { model, keyRef, keySet, keySource } = report.readiness;
+    const key = keyRef === undefined ? "key reference unknown" : `${keyRef} ${keySet ? `set${keySource ? ` (${keySource})` : ""}` : "not set"}`;
+    lines.push(`Model       ${model} (${key})`);
+  }
   lines.push(`Plugins     ${report.packageManager ? `${report.packageManager.name} ${report.packageManager.version} (bundled)` : "unavailable"}`);
   lines.push("Profiles");
   if (report.profiles.length === 0) lines.push("  (none)");
@@ -73,6 +76,7 @@ export function formatDoctorReport(report: DoctorReport): string {
     lines.push(`Compose     ${report.compose.profile}: ${report.compose.rows} rows, ${status}`);
   }
   if (report.error) lines.push(`Error       ${report.error}`);
+  lines.push(readyLine(report));
   return lines.join("\n") + "\n";
 }
 
@@ -80,4 +84,13 @@ export function doctorExitCode(report: DoctorReport): 0 | 1 {
   if (report.error !== undefined) return 1;
   if (report.compose === undefined || report.compose.missing.length > 0) return 1;
   return 0;
+}
+
+/** One line saying whether `tack run` can answer now, and the next step when it cannot. */
+export function readyLine(report: DoctorReport): string {
+  if (doctorExitCode(report) !== 0 || report.readiness === undefined) return "Ready       no: fix the error above";
+  const { keyRef, keySet } = report.readiness;
+  if (keySet) return "Ready       yes";
+  if (keyRef === undefined) return "Ready       unknown: the provider's key reference is not recorded; see `tack provider list`";
+  return `Ready       no: set the key with \`tack auth set ${keyRef}\` (reads it from stdin), or export ${keyRef}`;
 }
