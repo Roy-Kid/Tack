@@ -85,6 +85,8 @@ export interface BootOptions {
   args: readonly string[];
   /** A model for this run only; saved settings are not touched. */
   model?: ModelSelection;
+  /** Row configs for this run only, by row id; each replaces that row's config. */
+  rowConfigs?: Readonly<Record<string, unknown>>;
 }
 
 export interface CredentialStatus {
@@ -261,12 +263,16 @@ export async function loadRuntime(tackHome: string): Promise<Runtime> {
     }
   };
 
-  /** A one-run overlay pinning the default model; the saved profile layer is untouched. */
-  const modelOverlay = (selection: ModelSelection): string => {
-    const dir = mkdtempSync(join(tmpdir(), "tack-model-"));
-    const file = join(dir, "model.patch.yml");
-    const config = { provider: selection.provider, model: selection.model };
-    writeFileSync(file, `- id: agent-default-model\n  config: ${JSON.stringify(config)}\n`);
+  /** A one-run overlay replacing row configs; the saved profile layer is untouched. */
+  const configOverlay = (configs: Readonly<Record<string, unknown>>): string => {
+    const dir = mkdtempSync(join(tmpdir(), "tack-overlay-"));
+    const file = join(dir, "run.patch.yml");
+    writeFileSync(
+      file,
+      Object.entries(configs)
+        .map(([id, config]) => `- id: ${JSON.stringify(id)}\n  config: ${JSON.stringify(config)}\n`)
+        .join(""),
+    );
     return file;
   };
 
@@ -319,7 +325,9 @@ export async function loadRuntime(tackHome: string): Promise<Runtime> {
     },
     boot: async (name, options) => {
       const patchFiles = [...options.patchFiles];
-      if (options.model !== undefined) patchFiles.push(modelOverlay(options.model));
+      const configs: Record<string, unknown> = { ...options.rowConfigs };
+      if (options.model !== undefined) configs["agent-default-model"] = { provider: options.model.provider, model: options.model.model };
+      if (Object.keys(configs).length > 0) patchFiles.push(configOverlay(configs));
       await start(name, load(name), patchFiles, options.args);
     },
     isStartupError: (error): error is Error => error instanceof appBoot.StartupError,

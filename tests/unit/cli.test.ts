@@ -43,7 +43,20 @@ describe("parseTackArgs", () => {
       profile: DEFAULT_WEB_PROFILE,
       patches: [],
       args: ["--port", "0", "--no-open", "--trusted-host", "a", "b"],
+      check: false,
     });
+  });
+
+  it("parses web chrome flags before the app's own", () => {
+    expect(parseTackArgs(["web", "--chrome", "c.json", "--check"])).toEqual({
+      mode: "web",
+      profile: DEFAULT_WEB_PROFILE,
+      patches: [],
+      args: [],
+      chrome: "c.json",
+      check: true,
+    });
+    expect(parseTackArgs(["web", "--chrome", "c.json", "--port", "0"])).toMatchObject({ chrome: "c.json", check: false, args: ["--port", "0"] });
   });
 
   it("parses doctor options", () => {

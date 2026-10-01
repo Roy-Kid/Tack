@@ -1,5 +1,5 @@
 {
-  "runtime": "0.1.7-rc.2",
+  "runtime": "0.2.0-rc.2",
   "packages": {
     "@deepseek-ai/cordis": {
       "group": "vendor",
@@ -191,6 +191,11 @@
       "class": "browser-infra",
       "decision": "use"
     },
+    "@deepseek-ai/dsh-client-product-analytics": {
+      "group": "client",
+      "class": "deepseek-policy",
+      "decision": "disable"
+    },
     "@deepseek-ai/dsh-client-resources": {
       "group": "client",
       "class": "browser-infra",
@@ -316,11 +321,6 @@
       "class": "browser-infra",
       "decision": "use"
     },
-    "@deepseek-ai/dsh-client-ui-schedule": {
-      "group": "client",
-      "class": "ui-component",
-      "decision": "use"
-    },
     "@deepseek-ai/dsh-client-ui-session": {
       "group": "client",
       "class": "browser-infra",
@@ -360,6 +360,11 @@
       "group": "client",
       "class": "ui-component",
       "decision": "use"
+    },
+    "@deepseek-ai/dsh-client-ui-settings-session-log": {
+      "group": "client",
+      "class": "deepseek-policy",
+      "decision": "disable"
     },
     "@deepseek-ai/dsh-client-ui-settings-shell": {
       "group": "client",
@@ -631,6 +636,11 @@
       "class": "host-infra",
       "decision": "use"
     },
+    "@deepseek-ai/dsh-host-product-telemetry-otel": {
+      "group": "host",
+      "class": "deepseek-policy",
+      "decision": "disable"
+    },
     "@deepseek-ai/dsh-host-webserver": {
       "group": "host",
       "class": "host-infra",
@@ -716,6 +726,11 @@
       "class": "capability",
       "decision": "use"
     },
+    "@deepseek-ai/dsh-otel": {
+      "group": "telemetry",
+      "class": "deepseek-policy",
+      "decision": "disable"
+    },
     "@deepseek-ai/dsh-output-retention": {
       "group": "util",
       "class": "support",
@@ -794,11 +809,6 @@
     "@deepseek-ai/dsh-sandbox-windows-acl": {
       "group": "sandbox",
       "class": "execution",
-      "decision": "use"
-    },
-    "@deepseek-ai/dsh-schedule": {
-      "group": "schedule",
-      "class": "capability",
       "decision": "use"
     },
     "@deepseek-ai/dsh-scope": {
@@ -1029,11 +1039,6 @@
     "@deepseek-ai/dsh-terminal-bash": {
       "group": "terminal",
       "class": "execution",
-      "decision": "use"
-    },
-    "@deepseek-ai/dsh-time-context": {
-      "group": "context",
-      "class": "engine",
       "decision": "use"
     },
     "@deepseek-ai/dsh-timeout": {

@@ -93,6 +93,7 @@ jobs:
           commit-message: "Update runtime to DSH ${{ steps.check.outputs.candidate }}"
           add-paths: |
             packages/tack/package.json
+            packages/web-chrome/package.json
             package-lock.json
           labels: runtime-update
           delete-branch: true

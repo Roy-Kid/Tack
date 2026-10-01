@@ -10,18 +10,21 @@
     "node": ">=22.12"
   },
   "scripts": {
-    "build": "npm run build -w @tack/plugins && npm run build -w tack",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "npm run build -w @tack/plugins && npm run build -w @tack/web-chrome && npm run build -w tack",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p packages/web-chrome/tsconfig.json --noEmit",
     "lint": "rslint --type-check",
     "test": "npm run build && rstest run",
-    "test:unit": "rstest run tests/unit"
+    "test:unit": "rstest run tests/unit",
+    "test:e2e": "npm run build && rstest run -c rstest.e2e.config.ts"
   },
   "devDependencies": {
     "@rslib/core": "1.0.2",
     "@rslint/core": "0.9.3",
     "@rstest/core": "0.12.2",
     "@types/node": "26.6.2",
+    "@types/react": "18.3.31",
     "@types/semver": "7.8.0",
+    "playwright-core": "1.63.0",
     "semver": "7.8.5",
     "typescript": "7.0.2"
   }
