@@ -61,7 +61,8 @@ describe("tack doctor", () => {
     expect(result.code).toBe(0);
     expect(result.stdout).toContain(home);
     expect(result.stdout).toContain(RUNTIME_VERSION);
-    expect(result.stdout).toContain("DEEPSEEK_API_KEY: not set");
+    expect(result.stdout).toMatch(/^Model\s+deepseek-official\/\S+ \(DEEPSEEK_API_KEY not set\)$/m);
+    expect(result.stdout).toMatch(/^Ready\s+no: .*tack auth set DEEPSEEK_API_KEY/m);
 
     const manifestPath = join(home, "profiles", "default", "package.json");
     expect(existsSync(manifestPath)).toBe(true);

@@ -89,6 +89,18 @@ export interface BootOptions {
   rowConfigs?: Readonly<Record<string, unknown>>;
 }
 
+/** Whether a profile can answer: its default model and that provider's key. */
+export interface Readiness {
+  model: string;
+  /** Credential reference holding the provider's key, when Tack knows it. */
+  keyRef?: string;
+  keySet: boolean;
+  keySource?: string;
+}
+
+/** The built-in provider route and the reference its key is read from. */
+const DEFAULT_PROVIDER_KEYS: Readonly<Record<string, string>> = { "deepseek-official": "DEEPSEEK_API_KEY" };
+
 export interface CredentialStatus {
   ref: string;
   configured: boolean;
@@ -143,6 +155,8 @@ export interface Runtime {
   /** Store a credential in Tack's shared credential file. */
   setCredential(ref: string, value: string): Promise<void>;
   credentialStatus(refs: readonly string[]): Promise<CredentialStatus[]>;
+  /** The profile's default model and whether its provider key is configured (one boot). */
+  readiness(name: string): Promise<Readiness>;
 }
 
 /**
@@ -407,6 +421,15 @@ export async function loadRuntime(tackHome: string): Promise<Runtime> {
           result.push({ ref, configured: info.configured, ...(info.source !== undefined && { source: info.source }) });
         }
         return result;
+      }),
+    readiness: (name) =>
+      withHostPlane(name, async (ctx) => {
+        const selection = models.currentSelection(ctx);
+        const model = `${selection.provider}/${selection.model}`;
+        const keyRef = models.configuredRoutes(ctx)[selection.provider]?.apiKeyEnv ?? DEFAULT_PROVIDER_KEYS[selection.provider];
+        if (keyRef === undefined) return { model, keySet: false };
+        const info = await credentialsService(ctx).describe(credentials.credentialRef(keyRef));
+        return { model, keyRef, keySet: info.configured, ...(info.source !== undefined && { keySource: info.source }) };
       }),
     listTools: (name) =>
       withHostPlane(name, (ctx) => {

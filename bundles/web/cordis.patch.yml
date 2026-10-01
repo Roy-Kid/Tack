@@ -42,6 +42,14 @@
 - id: ui-brand-official
   disabled: true
 
+# ── Workspaces ───────────────────────────────────────────────────────────────
+# The first-use default workspace lives under Tack's home (the runtime maps
+# TACK_HOME onto DSH_HOME), never in the user's Documents folder, and works on
+# systems without one.
+- id: workspace-controller
+  config:
+    documentsDirectory: !!js "process.env.DSH_HOME + (process.platform === 'win32' ? '\\\\' : '/') + 'workspaces'"
+
 # ── Tack chrome ──────────────────────────────────────────────────────────────
 - insert:
     - id: tack-web-chrome

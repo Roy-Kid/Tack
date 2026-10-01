@@ -74,7 +74,7 @@ async function main(): Promise<void> {
         if (tools.length === 0) process.stderr.write(`tack: no tools are registered on the "${invocation.profile}" profile's host plane\n`);
         return;
       }
-      const report = collectDoctorReport(runtime, {
+      const report = await collectDoctorReport(runtime, {
         tackVersion: tackVersion(),
         home: tackHome,
         profile: invocation.profile,

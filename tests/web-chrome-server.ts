@@ -1,5 +1,5 @@
 /** Serve `tack web` with a chrome file and hold an authenticated session for fetches. */
-import { type RunningTack, spawnTackUntil } from "./helpers.js";
+import { type RunningTack, type SpawnOptions, spawnTackUntil } from "./helpers.js";
 
 export interface ChromeServer {
   running: RunningTack;
@@ -9,12 +9,19 @@ export interface ChromeServer {
   base: string;
   /** Fetch a page-relative path with the session cookie. */
   get(path: string): Promise<Response>;
+  /** Everything the server printed so far. */
+  output(): string;
   stop(): Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
 }
 
-export async function serveChrome(home: string, extraArgs: readonly string[]): Promise<ChromeServer> {
+export async function serveChrome(
+  home: string,
+  extraArgs: readonly string[],
+  options: Pick<SpawnOptions, "cwd" | "env" | "bin"> = {},
+): Promise<ChromeServer> {
   const running = await spawnTackUntil(["web", ...extraArgs, "--no-open", "--port", "0"], {
     home,
+    ...options,
     pattern: /https?:\/\/127\.0\.0\.1:\d+\//,
     timeoutMs: 90_000,
   });
@@ -27,6 +34,7 @@ export async function serveChrome(home: string, extraArgs: readonly string[]): P
     running,
     url,
     base,
+    output: () => running.output(),
     get: (path) => fetch(new URL(path, base), { headers: { cookie } }),
     stop: async () => {
       running.child.kill("SIGINT");

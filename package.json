@@ -15,7 +15,11 @@
     "lint": "rslint --type-check",
     "test": "npm run build && rstest run",
     "test:unit": "rstest run tests/unit",
-    "test:e2e": "npm run build && rstest run -c rstest.e2e.config.ts"
+    "test:e2e": "npm run build && rstest run -c rstest.e2e.config.ts",
+    "setup": "npm ci && npm run build && npm link -w tack && node packages/tack/lib/bin.js doctor",
+    "test:agent": "npm run build && rstest run tests/integration/agent.test.ts",
+    "test:install": "rstest run -c rstest.install.config.ts",
+    "test:live": "npm run build && node scripts/live-smoke.ts"
   },
   "devDependencies": {
     "@rslib/core": "1.0.2",

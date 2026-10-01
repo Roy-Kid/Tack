@@ -29,9 +29,24 @@ export interface SpawnResult {
   stderr: string;
 }
 
-export function spawnTack(args: readonly string[], options: { home: string; input?: string }): Promise<SpawnResult> {
+export interface SpawnOptions {
+  home: string;
+  input?: string;
+  /** Working directory (default: this process's). */
+  cwd?: string;
+  /** Extra environment on top of {@link testEnv}. */
+  env?: NodeJS.ProcessEnv;
+  /** The `tack` entry to run (default: the repository's built bin). */
+  bin?: string;
+}
+
+export function spawnTack(args: readonly string[], options: SpawnOptions): Promise<SpawnResult> {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(process.execPath, [BIN, ...args], { env: testEnv(options.home), stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(process.execPath, [options.bin ?? BIN, ...args], {
+      env: testEnv(options.home, options.env),
+      stdio: ["pipe", "pipe", "pipe"],
+      ...(options.cwd !== undefined && { cwd: options.cwd }),
+    });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
@@ -47,13 +62,22 @@ export interface RunningTack {
   child: ChildProcess;
   /** The first line (on either stream) matching `pattern`. */
   matched: string;
+  /** Everything printed on stdout and stderr so far. */
+  output(): string;
   exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
 }
 
 /** Start Tack and resolve once a line matching `pattern` appears on stdout or stderr. */
-export function spawnTackUntil(args: readonly string[], options: { home: string; pattern: RegExp; timeoutMs?: number }): Promise<RunningTack> {
+export function spawnTackUntil(
+  args: readonly string[],
+  options: Omit<SpawnOptions, "input"> & { pattern: RegExp; timeoutMs?: number },
+): Promise<RunningTack> {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(process.execPath, [BIN, ...args], { env: testEnv(options.home), stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(process.execPath, [options.bin ?? BIN, ...args], {
+      env: testEnv(options.home, options.env),
+      stdio: ["ignore", "pipe", "pipe"],
+      ...(options.cwd !== undefined && { cwd: options.cwd }),
+    });
     let output = "";
     let settled = false;
     const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolveExit) => {
@@ -72,7 +96,7 @@ export function spawnTackUntil(args: readonly string[], options: { home: string;
         if (options.pattern.test(line)) {
           settled = true;
           clearTimeout(timer);
-          resolvePromise({ child, matched: line, exited });
+          resolvePromise({ child, matched: line, exited, output: () => output });
           return;
         }
       }

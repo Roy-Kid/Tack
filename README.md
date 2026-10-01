@@ -4,15 +4,41 @@ Tack is a general-purpose agent harness. Its current runtime is
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), pinned to an
 exact version and used only through Tack's own CLI.
 
-## Install
+## Install (from source)
+
+Requires Node 22.12 or newer and git.
 
 ```sh
-npm install
-npm run build
-npm link -w tack        # or: node packages/tack/lib/bin.js ...
+git clone https://github.com/Roy-Kid/Tack && cd Tack
+npm run setup            # npm ci, build, link `tack` onto your PATH, run `tack doctor`
 ```
 
-Requires Node 22.12 or newer.
+If linking needs permissions you don't have, set a user prefix first
+(`npm config set prefix ~/.local`) or run `node packages/tack/lib/bin.js` directly.
+
+## First test
+
+With a DeepSeek key (Tack's default provider):
+
+```sh
+printf %s "$DEEPSEEK_API_KEY" | tack auth set DEEPSEEK_API_KEY
+tack doctor              # ends with "Ready       yes"
+tack run "list the files in this directory"
+tack web                 # opens the browser UI
+```
+
+Any other provider works the same way, e.g.
+`tack provider add anthropic --api-key-env ANTHROPIC_API_KEY` then
+`tack model use anthropic/<model>` (see `tack model list`).
+
+Without any key, the end-to-end suites run against a scripted local model:
+
+```sh
+npm run test:agent       # tack run: text, tools, stdin, plugins
+npm run test:e2e         # tack web in Chromium: chat, chrome, theme
+npm run test:install     # a clean install from source, then the installed tack
+DEEPSEEK_API_KEY=... npm run test:live   # one real turn (skips without a key)
+```
 
 ## Usage
 
@@ -115,7 +141,7 @@ A new upstream package fails verification until it is classified.
 
 | Variable | Meaning |
 | --- | --- |
-| `TACK_HOME` | Tack home; profiles, sessions, and settings live here. Default `~/.tack`. |
+| `TACK_HOME` | Tack home; profiles, sessions, settings, and the web UI's default workspace (`workspaces/`) live here. Default `~/.tack`. |
 | `DEEPSEEK_API_KEY` | Key for the default provider (DeepSeek). Other providers use their own names, e.g. `ANTHROPIC_API_KEY`; `tack auth set` stores them in `$TACK_HOME`. |
 | `DEEPSEEK_BASE_URL` | Optional provider base URL. |
 

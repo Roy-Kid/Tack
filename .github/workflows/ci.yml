@@ -26,3 +26,30 @@ jobs:
         run: |
           npx playwright-core install --with-deps chromium
           npm run test:e2e
+
+  # Install from source as the README says, then use the installed `tack`.
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:install
+
+  # One real turn against DeepSeek. Runs only where the DEEPSEEK_API_KEY
+  # secret exists (not on forks); otherwise the step reports a skip.
+  live:
+    runs-on: ubuntu-latest
+    env:
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:live
