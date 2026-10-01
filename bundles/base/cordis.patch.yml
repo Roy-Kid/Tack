@@ -23,8 +23,12 @@
 # The DeepSeek provider itself stays (llm-deepseek, web-search-deepseek).
 # What is off is DeepSeek's product behaviour around it.
 
-# Session telemetry export to DeepSeek's collector.
+# Session telemetry export to DeepSeek's collector, and the OTLP channel
+# service it exports through.
 - id: session-telemetry-otel
+  disabled: true
+
+- id: otel
   disabled: true
 
 # Session-log upload inside official API requests.

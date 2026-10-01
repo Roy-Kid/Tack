@@ -29,6 +29,14 @@ beforeAll(async () => {
 
 afterAll(() => rmSync(home, { recursive: true, force: true }));
 
+describe("closure review", () => {
+  it("reviews telemetry export, product analytics, and session-log upload as disabled", () => {
+    const families = Object.keys(closure.packages).filter((name) => /-otel$|analytics|session-log-deepseek|settings-session-log/.test(name));
+    expect(families.length).toBeGreaterThan(0);
+    expect(families.filter((name) => !disabledPackages.has(name))).toEqual([]);
+  });
+});
+
 describe.each(["default", "web"])("profile %s", (profile) => {
   it("composes without patch warnings", () => {
     expect(dumps.get(profile)!.stderr.trim()).toBe("");

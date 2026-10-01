@@ -18,6 +18,19 @@
 - id: ui-settings-account
   disabled: true
 
+# Product usage analytics and its OTLP export (desktop profile upstream; off
+# everywhere in Tack).
+- id: desktop-product-telemetry
+  disabled: true
+
+- id: product-analytics
+  disabled: true
+
+# The setting that uploads session logs with DeepSeek API requests; the upload
+# itself (session-log-deepseek) is off in @tack/base.
+- id: ui-settings-session-log
+  disabled: true
+
 # Message feedback (like/dislike records).
 - id: message-feedback
   disabled: true

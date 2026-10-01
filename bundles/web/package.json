@@ -1,6 +1,6 @@
 {
   "name": "@tack/web",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Tack's web app composition: Tack owns the `tack web` command line and the product policy of the web surface",
   "license": "MIT",
   "files": [

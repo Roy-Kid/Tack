@@ -85,6 +85,12 @@ const OVERRIDES: Record<string, Omit<Review, "group">> = {
   "dsh-deepseek-account-platform": { class: "deepseek-policy", decision: "disable" },
   "dsh-llm-deepseek-account": { class: "deepseek-policy", decision: "disable" },
   "dsh-command-feedback": { class: "deepseek-policy", decision: "disable" },
+  // Telemetry and product analytics (OTLP export to DeepSeek collectors) and the
+  // setting that uploads session logs with DeepSeek API requests.
+  "dsh-otel": { class: "deepseek-policy", decision: "disable" },
+  "dsh-host-product-telemetry-otel": { class: "deepseek-policy", decision: "disable" },
+  "dsh-client-product-analytics": { class: "deepseek-policy", decision: "disable" },
+  "dsh-client-ui-settings-session-log": { class: "deepseek-policy", decision: "disable" },
   "dsh-message-feedback": { class: "deepseek-policy", decision: "disable" },
   "dsh-llm-deepseek": { class: "provider", decision: "use" },
   "dsh-llm-deepseek-api-key": { class: "provider", decision: "use" },
@@ -132,8 +138,11 @@ export function classify(name: string, group: string): Review {
   return { group, class: klass, decision: DEFAULT_DECISION[klass] };
 }
 
-function installedDirectory(name: string): string | undefined {
-  const manifest = join(INSTALLED, name, "package.json");
+/** `repository.directory` of an installed copy, wherever npm placed it (hoisted or nested under a workspace). */
+function installedDirectory(name: string, lockfile = LOCKFILE): string | undefined {
+  const lock = JSON.parse(readFileSync(lockfile, "utf8")) as { packages: Record<string, unknown> };
+  const key = Object.keys(lock.packages).find((path) => path.endsWith(`node_modules/${name}`));
+  const manifest = join(key === undefined ? join(INSTALLED, name) : join(REPO_ROOT, key), "package.json");
   if (!existsSync(manifest)) return undefined;
   const pkg = JSON.parse(readFileSync(manifest, "utf8")) as { repository?: { directory?: string } };
   return pkg.repository?.directory;

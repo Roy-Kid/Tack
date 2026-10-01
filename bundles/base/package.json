@@ -1,6 +1,6 @@
 {
   "name": "@tack/base",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "description": "Tack base policy for every profile: persona, model default, and product defaults over the runtime",
   "license": "MIT",
   "files": [

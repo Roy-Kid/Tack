@@ -23,6 +23,8 @@ export const DEFAULT_TAG = "next";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const TACK_MANIFEST = join(REPO_ROOT, "packages", "tack", "package.json");
+/** Every manifest that pins runtime packages; `apply` and `installed` cover them all. */
+export const RUNTIME_MANIFESTS = [TACK_MANIFEST, join(REPO_ROOT, "packages", "web-chrome", "package.json")];
 
 export interface Manifest {
   dependencies?: Record<string, string>;
@@ -138,7 +140,9 @@ function readManifest(path: string): Manifest {
 
 export function main(argv: string[]): number {
   const [command, ...args] = argv;
-  const manifestPath = option(args, "--manifest") ?? TACK_MANIFEST;
+  const explicitManifest = option(args, "--manifest");
+  const manifestPath = explicitManifest ?? TACK_MANIFEST;
+  const manifestPaths = explicitManifest === undefined ? RUNTIME_MANIFESTS : [explicitManifest];
   switch (command) {
     case "check": {
       const current = currentRuntimeVersion(readManifest(manifestPath));
@@ -152,25 +156,30 @@ export function main(argv: string[]): number {
       return 0;
     }
     case "apply": {
-      const version = args.find((arg) => !arg.startsWith("--") && arg !== manifestPath);
+      const version = args.find((arg) => !arg.startsWith("--") && arg !== explicitManifest);
       if (version === undefined) throw new Error("usage: apply <version>");
-      const manifest = readManifest(manifestPath);
-      const missing = Object.keys(runtimePins(manifest)).filter((name) => npmView(`${name}@${version}`, "version") !== version);
+      const manifests = manifestPaths.map((path) => ({ path, manifest: readManifest(path) }));
+      const names = [...new Set(manifests.flatMap(({ manifest }) => Object.keys(runtimePins(manifest))))].sort();
+      const missing = names.filter((name) => npmView(`${name}@${version}`, "version") !== version);
       if (missing.length > 0) throw new Error(`not published at ${version}: ${missing.join(", ")}`);
-      writeFileSync(manifestPath, JSON.stringify(withRuntimeVersion(manifest, version), null, 2) + "\n");
-      output({ applied: version, pins: Object.keys(runtimePins(manifest)).join(",") });
+      for (const { path, manifest } of manifests) {
+        writeFileSync(path, JSON.stringify(withRuntimeVersion(manifest, version), null, 2) + "\n");
+      }
+      output({ applied: version, pins: names.join(",") });
       return 0;
     }
     case "installed": {
-      const pins = runtimePins(readManifest(manifestPath));
-      const wrong = Object.entries(pins)
-        .map(([name, version]) => ({ name, version, resolved: resolvedVersion(manifestPath, name) }))
+      const pins = manifestPaths.flatMap((path) =>
+        Object.entries(runtimePins(readManifest(path))).map(([name, version]) => ({ path, name, version })),
+      );
+      const wrong = pins
+        .map(({ path, name, version }) => ({ name, version, resolved: resolvedVersion(path, name) }))
         .filter(({ version, resolved }) => resolved !== version);
       for (const { name, version, resolved } of wrong) {
         process.stderr.write(`runtime-update: ${name} resolves to ${resolved ?? "nothing"}, pinned ${version}\n`);
       }
       if (wrong.length > 0) return 1;
-      output({ installed: String(Object.keys(pins).length) });
+      output({ installed: String(pins.length) });
       return 0;
     }
     case "report": {
