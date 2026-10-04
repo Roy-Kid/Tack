@@ -121,17 +121,17 @@ integration.
 
 ## Runtime updates
 
-The runtime is pinned to one exact version. A scheduled workflow
-(`.github/workflows/runtime-update.yml`) watches for new releases, re-pins,
-runs the full suite, and opens a pull request that reports the result. Run it
-by hand from the Actions tab, optionally with an exact version, or locally
-(Node 22.18 or newer runs the TypeScript script directly):
+The runtime is pinned to one exact version, set by hand. To move to a new
+release (Node 22.18 or newer runs the TypeScript scripts directly):
 
-```sh
-node scripts/runtime-update.ts check            # current vs newest `next` release
-node scripts/runtime-update.ts apply <version>  # then: npm install
-node scripts/runtime-closure.ts diff            # every runtime package reviewed?
-```
+1. Set every `@deepseek-ai/*` dependency in `packages/tack/package.json` and
+   `packages/web-chrome/package.json` to the same exact version; the isolation
+   test rejects ranges and mixed versions.
+2. `npm install`
+3. `node scripts/runtime-closure.ts diff` lists new and removed runtime
+   packages; review them and record the decisions with
+   `node scripts/runtime-closure.ts write` (check its output before committing).
+4. `npm test && npm run test:e2e`
 
 Every runtime package Tack installs is reviewed in `packages/tack/runtime-closure.json`
 (source group, class, and decision: use, compose, wrap, disable, or forbidden).
