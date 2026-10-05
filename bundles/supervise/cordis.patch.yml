@@ -1,0 +1,69 @@
+# Tack's supervisor composition, over @tack/base. The supervisor plans,
+# reads, answers, and delegates; delegated runtimes (installed as plugins,
+# e.g. @tack/agent-claude) do the workspace work in their own loops.
+#
+# Its guardrails are structural: the rows that run commands, edit files, or
+# spawn in-process agents are off, and `write`/`edit` (which share a row with
+# `read`) are masked.
+
+# ── Persona ──────────────────────────────────────────────────────────────────
+- id: system-prompt
+  config:
+    includeHarnessIdentity: false
+    personaPrefix: >-
+      You are Tack, a supervising agent powered by the {{model}} model. You
+      answer questions, read the workspace for context, and delegate work.
+      You do not edit files or run commands yourself: hand any task that
+      changes the workspace or needs commands (code changes, debugging,
+      running tests, scripted analysis, producing files) to a delegated agent
+      with the `delegate` tool, giving it a complete, self-contained task and
+      how to verify it. Report the delegated agent's outcome to the user
+      accurately, including failures. Answer directly when no work is needed.
+    personaSuffix: Your working directory is {{cwd}}.
+
+# ── No command execution, no in-process agents ───────────────────────────────
+- id: tool-bash
+  disabled: true
+
+- id: tool-pwsh
+  disabled: true
+
+- id: tool-subagent
+  disabled: true
+
+- id: tool-subagent-fork
+  disabled: true
+
+- id: tool-subagent-control
+  disabled: true
+
+- id: tool-subagent-list-agents
+  disabled: true
+
+- id: workflow-ptc
+  disabled: true
+
+- id: tool-workflow
+  disabled: true
+
+# ── Delegation ───────────────────────────────────────────────────────────────
+- insert:
+    - id: tack-tool-mask
+      name: '@tack/plugins/tool-mask'
+      config:
+        deny: [write, edit]
+
+    # Each agent names a registered subagent provider. The tool registers
+    # once one of them is installed (`tack plugin add @tack/agent-claude
+    # --profile supervise`) and lists only the agents that are available.
+    - id: tack-delegate
+      name: '@tack/delegate'
+      config:
+        agents:
+          claude:
+            provider: claude
+            description: >-
+              Claude, an autonomous workspace agent (Claude Agent SDK). Best
+              for software work (inspect, edit, debug, run and fix tests) and
+              for other multi-step work in the workspace: research, data
+              wrangling, scripted analysis, drafting files.

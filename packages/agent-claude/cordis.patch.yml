@@ -1,0 +1,15 @@
+# Registers the Claude provider (`claude`) with the runtime's subagent service.
+# A `delegate` agent entry names it; see @tack/supervise. Override the row's
+# config in a profile patch, e.g. to change the permission tier:
+#
+#   - id: agent-claude
+#     config:
+#       permissions: edit        # read-only | edit | full
+#       whenNoApprover: deny     # what an unanswerable ask resolves to
+#       maxTurns: 50
+#       apiKeyRef: ANTHROPIC_API_KEY
+
+- insert:
+    - id: agent-claude
+      name: '@tack/agent-claude'
+      config: {}

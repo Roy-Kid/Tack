@@ -10,14 +10,14 @@
     "node": ">=22.12"
   },
   "scripts": {
-    "build": "npm run build -w @tack/plugins && npm run build -w @tack/web-chrome && npm run build -w tack",
+    "build": "npm run build -w @tack/plugins -w @tack/delegate -w @tack/agent-claude -w @tack/web-chrome -w tack",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p packages/web-chrome/tsconfig.json --noEmit",
     "lint": "rslint --type-check",
     "test": "npm run build && rstest run",
     "test:unit": "rstest run tests/unit",
     "test:e2e": "npm run build && rstest run -c rstest.e2e.config.ts",
     "setup": "npm ci && npm run build && npm link -w tack && node packages/tack/lib/bin.js doctor",
-    "test:agent": "npm run build && rstest run tests/integration/agent.test.ts",
+    "test:agent": "npm run build && rstest run tests/integration/agent.test.ts tests/integration/delegate.test.ts",
     "test:install": "rstest run -c rstest.install.config.ts",
     "test:live": "npm run build && node scripts/live-smoke.ts"
   },

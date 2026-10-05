@@ -45,6 +45,7 @@ const RUNTIME_BUNDLE_WEB = "@deepseek-ai/dsh-web-app";
 const TACK_BUNDLE_BASE = "@tack/base";
 const TACK_BUNDLE_RUN = "@tack/run";
 const TACK_BUNDLE_WEB = "@tack/web";
+const TACK_BUNDLE_SUPERVISE = "@tack/supervise";
 
 /**
  * Tack profile templates: the ordered bundle stack each named profile starts
@@ -54,6 +55,8 @@ const TACK_BUNDLE_WEB = "@tack/web";
 export const PROFILE_TEMPLATES: Readonly<Record<string, readonly string[]>> = {
   default: [RUNTIME_BUNDLE_BASE, RUNTIME_BUNDLE_HEADLESS, TACK_BUNDLE_BASE, TACK_BUNDLE_RUN],
   web: [RUNTIME_BUNDLE_BASE, RUNTIME_BUNDLE_WEB, TACK_BUNDLE_BASE, TACK_BUNDLE_WEB],
+  /** `tack run` as a supervisor that delegates workspace work to installed agent runtimes. */
+  supervise: [RUNTIME_BUNDLE_BASE, RUNTIME_BUNDLE_HEADLESS, TACK_BUNDLE_BASE, TACK_BUNDLE_RUN, TACK_BUNDLE_SUPERVISE],
 };
 
 /** The app bundles: the runtime's and Tack's. Rows they insert are switched off in host-plane boots. */

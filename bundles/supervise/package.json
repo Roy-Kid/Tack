@@ -1,0 +1,14 @@
+{
+  "name": "@tack/supervise",
+  "version": "0.1.0",
+  "description": "Tack supervisor composition: an agent that answers, reads, and delegates workspace work to delegated agent runtimes instead of editing or running commands itself",
+  "license": "MIT",
+  "files": [
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

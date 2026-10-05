@@ -34,7 +34,7 @@ Any other provider works the same way, e.g.
 Without any key, the end-to-end suites run against a scripted local model:
 
 ```sh
-npm run test:agent       # tack run: text, tools, stdin, plugins
+npm run test:agent       # tack run: text, tools, stdin, plugins, delegation
 npm run test:e2e         # tack web in Chromium: chat, chrome, theme
 npm run test:install     # a clean install from source, then the installed tack
 DEEPSEEK_API_KEY=... npm run test:live   # one real turn (skips without a key)
@@ -83,6 +83,47 @@ the Tack versions it supports:
 
 `examples/plugin-echo` is a complete one-tool plugin. Tack bundles its own
 package manager for plugin installs; nothing else needs to be on `PATH`.
+
+## Delegation (supervise profile)
+
+The `supervise` profile is a supervisor: it answers, reads the workspace, and
+hands work that changes it to a delegated agent runtime with the `delegate`
+tool. It cannot edit files or run commands itself. The runtime does the work
+in its own loop; the supervisor gets back a short structured report (status,
+summary, files changed, commands, tests). The runtime's tool calls are
+recorded in the session, nested under the delegation.
+
+The first runtime is Claude (the Claude Agent SDK), an optional plugin, so
+Tack itself never depends on the SDK:
+
+```sh
+tack plugin add ./packages/agent-claude --profile supervise   # from a source checkout
+printf %s "$ANTHROPIC_API_KEY" | tack auth set ANTHROPIC_API_KEY
+tack run --profile supervise "npm test fails; get it passing"
+```
+
+Claude runs in the session's working directory, with its own configuration
+under `$TACK_HOME/claude` (never `~/.claude`, and no ambient `ANTHROPIC_*` or
+`CLAUDE_*` variables). It reads freely and edits inside the workspace; anything
+else (commands, for example) asks through Tack's approval service. A headless
+`tack run` has no one to answer, so those asks are denied unless the profile
+says otherwise. Set the provider row in `$TACK_HOME/profiles/supervise/cordis.patch.yml`
+(or a `--patch` file):
+
+```yaml
+- id: agent-claude
+  config:
+    permissions: edit        # read-only | edit (default) | full
+    whenNoApprover: deny     # deny (default) | allow
+    maxTurns: 50
+    maxBudgetUsd: 2          # optional
+    model: claude-sonnet-5-5 # optional; the SDK default otherwise
+    baseUrl: https://gw/     # optional Anthropic-compatible gateway
+```
+
+`npm run test:agent` covers delegation against scripted models;
+`npm run test:live` runs one real delegation when both `DEEPSEEK_API_KEY` and
+`ANTHROPIC_API_KEY` are set.
 
 ## Web chrome
 

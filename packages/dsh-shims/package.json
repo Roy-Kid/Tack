@@ -1,0 +1,17 @@
+{
+  "name": "@tack/dsh-shims",
+  "version": "0.1.0",
+  "description": "Temporary type shims for DSH contract additions Tack has proposed upstream; each file is deleted when DSH ships it",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    "./subagent-events": { "types": "./subagent-events.d.ts" },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "subagent-events.d.ts"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/dsh-subagent": "0.2.0-rc.2"
+  }
+}

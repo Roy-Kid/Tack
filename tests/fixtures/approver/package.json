@@ -1,0 +1,22 @@
+{
+  "name": "tack-test-approver",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Test fixture: answers approval requests for delegated tools in headless runs and records them",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "keywords": [
+    "tack-plugin"
+  ],
+  "tack": {
+    "compat": ">=0.7.0 <1.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

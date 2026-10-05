@@ -1,11 +1,12 @@
 {
   "name": "@tack/plugins",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Tack's own runtime plugins",
   "license": "MIT",
   "type": "module",
   "exports": {
     "./headless-startup": "./lib/headless-startup.js",
+    "./tool-mask": "./lib/tool-mask.js",
     "./web-startup": "./lib/web-startup.js",
     "./package.json": "./package.json"
   },
