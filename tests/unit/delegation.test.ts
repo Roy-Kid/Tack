@@ -7,9 +7,10 @@ import { describe, expect, it } from "@rstest/core";
 import { renderRecord, validateConfig, type DelegationRecord } from "../../packages/delegate/src/index.js";
 import { resolveConfig } from "../../packages/agent-claude/src/index.js";
 import { EventQueue, EventTranslator } from "../../packages/agent-claude/src/events.js";
-import { decide } from "../../packages/agent-claude/src/permissions.js";
+import { decide, effectiveTier } from "../../packages/agent-claude/src/permissions.js";
 import { settle } from "../../packages/agent-claude/src/run.js";
 import { apply as applyToolMask } from "../../packages/plugins/src/tool-mask.js";
+import { cardModel, formatFooter } from "../../packages/delegate/src/view.js";
 
 describe("delegate config", () => {
   it("defaults the tool name and accepts named agents", () => {
@@ -165,13 +166,120 @@ describe("Claude result mapping", () => {
   });
 });
 
+/** A fake agent whose tool registry knows `visible` and records live restrictions. */
+function fakeAgent(sessionId: string, visible: readonly string[]) {
+  const active = new Set<string>();
+  const agent = {
+    session: { id: sessionId },
+    ctx: {
+      tools: {
+        restrict: ({ deny }: { deny: readonly string[] }) => {
+          const name = deny[0]!;
+          if (!visible.includes(name)) throw new Error(`unknown tool ${name}`);
+          active.add(name);
+          return () => active.delete(name);
+        },
+      },
+    },
+  };
+  return { agent, masked: () => [...active].sort() };
+}
+
+function maskHarness(config: Parameters<typeof applyToolMask>[1], presets: Map<unknown, string> = new Map()) {
+  const listeners = new Map<string, (...args: never[]) => void>();
+  applyToolMask(
+    {
+      get: () => ({ composedPreset: (ctx: unknown) => presets.get(ctx) }),
+      on: (event: string, listener: (...args: never[]) => void) => (listeners.set(event, listener), () => {}),
+    } as never,
+    config,
+  );
+  return (event: string, ...args: unknown[]) => (listeners.get(event) as ((...args: unknown[]) => void) | undefined)?.(...args);
+}
+
 describe("tool mask", () => {
-  it("hides denied tools that exist from every agent created", () => {
-    let created: ((event: { agent: { ctx: { tools: never } } }) => void) | undefined;
-    const restricted: (readonly string[])[] = [];
-    const tools = { schemas: () => [{ name: "read" }, { name: "write" }, { name: "edit" }], restrict: () => () => {} };
-    applyToolMask({ tools, on: (_event: string, listener: unknown) => ((created = listener as never), () => {}) } as never, { deny: ["write", "edit", "bash"] });
-    created!({ agent: { ctx: { tools: { schemas: () => [], restrict: (filter: { deny: readonly string[] }) => (restricted.push(filter.deny), () => {}) } as never } } });
-    expect(restricted).toEqual([["write", "edit"]]);
+  it("hides the denied tools each agent can see", () => {
+    const emit = maskHarness({ deny: ["write", "edit", "bash"] });
+    const { agent, masked } = fakeAgent("s1", ["read", "write", "edit"]);
+    emit("agent/created", { agent });
+    expect(masked()).toEqual(["edit", "write"]);
+  });
+
+  it("with a preset, masks only that preset's agents and follows a switch", () => {
+    const presets = new Map<unknown, string>();
+    const emit = maskHarness({ deny: ["write", "edit"], preset: "supervise" }, presets);
+    const supervised = fakeAgent("s1", ["read", "write", "edit"]);
+    const standard = fakeAgent("s2", ["read", "write", "edit"]);
+    presets.set(supervised.agent.ctx, "supervise");
+    presets.set(standard.agent.ctx, "standard");
+    emit("agent/created", { agent: supervised.agent });
+    emit("agent/created", { agent: standard.agent });
+    expect(supervised.masked()).toEqual(["edit", "write"]);
+    expect(standard.masked()).toEqual([]);
+
+    emit("agent-preset/selected", "s1", "standard");
+    emit("agent-preset/selected", "s2", "supervise");
+    expect(supervised.masked()).toEqual([]);
+    expect(standard.masked()).toEqual(["edit", "write"]);
+  });
+});
+
+describe("Claude tier under the session's sandbox mode", () => {
+  it("caps to read-only, grants asks in full access, and never raises the tier", () => {
+    expect(effectiveTier("edit", "read-only")).toEqual({ tier: "read-only", allowAsks: false });
+    expect(effectiveTier("edit", "workspace-write")).toEqual({ tier: "edit", allowAsks: false });
+    expect(effectiveTier("edit", undefined)).toEqual({ tier: "edit", allowAsks: false });
+    expect(effectiveTier("edit", "danger-full-access")).toEqual({ tier: "edit", allowAsks: true });
+    expect(effectiveTier("read-only", "danger-full-access")).toEqual({ tier: "read-only", allowAsks: false });
+    expect(effectiveTier("full", "read-only")).toEqual({ tier: "read-only", allowAsks: false });
+  });
+});
+
+describe("delegate card", () => {
+  const record: DelegationRecord = {
+    agent: "claude",
+    runId: "r",
+    status: "completed",
+    stopReason: "completed",
+    summary: "Fixed sum.\nDetails follow.",
+    report: { status: "completed", summary: "Fixed sum.", filesChanged: ["sum.js"], commands: [{ command: "npm test", exitCode: 0 }], tests: { command: "npm test", passed: true } },
+    toolCalls: 3,
+    filesChanged: ["sum.js"],
+    costUsd: 0.0412,
+    turns: 5,
+  };
+  const args = JSON.stringify({ agent: "claude", description: "Fix the test", task: "..." });
+
+  it("shows progress while running", () => {
+    expect(cardModel("start", { argsRaw: args, subCalls: [{}, {}] })).toMatchObject({ state: "running", agent: "claude", headline: "Fix the test · 2 steps" });
+    expect(cardModel("start", { argsRaw: args })).toMatchObject({ headline: "Fix the test · starting" });
+    expect(cardModel("preparing", {}).state).toBe("preparing");
+  });
+
+  it("shows the record when finished", () => {
+    const model = cardModel("result", { argsRaw: args, meta: record });
+    expect(model).toMatchObject({
+      state: "completed",
+      headline: "Fixed sum.",
+      filesChanged: ["sum.js"],
+      commands: [{ command: "npm test", exitCode: 0 }],
+      tests: { command: "npm test", passed: true },
+      footer: "3 tool calls · $0.04 · 5 turns",
+      expandable: true,
+    });
+  });
+
+  it("adds the diagnostic for runs that did not complete", () => {
+    expect(cardModel("result", { meta: { ...record, status: "failed", diagnostic: "Turn limit." } }).detail).toContain("Turn limit.");
+  });
+
+  it("falls back to the error when there is no record", () => {
+    expect(cardModel("result", { argsRaw: args, isError: true, content: [{ type: "text", text: "delegation cancelled" }] })).toMatchObject({ state: "cancelled", headline: "delegation cancelled" });
+    expect(cardModel("result", { isError: true, error: { message: "delegate: agent \"x\" is not available" } })).toMatchObject({ state: "error", agent: "agent" });
+  });
+
+  it("formats small costs and singular counts", () => {
+    expect(formatFooter({ toolCalls: 1, costUsd: 0.0031, turns: 1 })).toBe("1 tool call · $0.0031 · 1 turn");
+    expect(formatFooter({ toolCalls: 0 })).toBe("0 tool calls");
   });
 });

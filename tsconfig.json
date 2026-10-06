@@ -18,11 +18,11 @@
   "include": [
     "packages/tack/src",
     "packages/plugins/src",
-    "packages/delegate/src",
     "packages/agent-claude/src",
     "scripts",
     "tests",
     "*.config.ts",
-    "packages/*/rslib.config.ts"
+    "packages/*/rslib.config.ts",
+    "packages/delegate/src/*.ts"
   ]
 }

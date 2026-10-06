@@ -44,3 +44,22 @@ export function decide(tier: PermissionTier, workspace: string, tool: string, in
   const detail = tool === "Bash" && typeof input.command === "string" ? `: ${input.command}` : "";
   return { kind: "ask", reason: `Claude wants to run ${tool}${detail}` };
 }
+
+/** What a session's sandbox mode makes of the configured tier. */
+export interface EffectiveTier {
+  tier: PermissionTier;
+  /** Grant asks without prompting: the session already allows everything without approval. */
+  allowAsks: boolean;
+}
+
+/**
+ * Cap the configured tier by the delegating session's sandbox mode: a
+ * read-only session gets a read-only Claude, and a full-access session (whose
+ * own policy never asks) has Claude's asks granted. The cap never raises the
+ * configured tier.
+ */
+export function effectiveTier(configured: PermissionTier, sandboxMode: string | undefined): EffectiveTier {
+  if (sandboxMode === "read-only") return { tier: "read-only", allowAsks: false };
+  if (sandboxMode === "danger-full-access") return { tier: configured, allowAsks: configured !== "read-only" };
+  return { tier: configured, allowAsks: false };
+}

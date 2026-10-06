@@ -11,7 +11,7 @@
   },
   "scripts": {
     "build": "npm run build -w @tack/plugins -w @tack/delegate -w @tack/agent-claude -w @tack/web-chrome -w tack",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p packages/web-chrome/tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p packages/web-chrome/tsconfig.json --noEmit && tsc -p packages/delegate/tsconfig.json --noEmit",
     "lint": "rslint --type-check",
     "test": "npm run build && rstest run",
     "test:unit": "rstest run tests/unit",

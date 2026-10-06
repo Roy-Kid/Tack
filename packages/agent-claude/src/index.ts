@@ -12,7 +12,7 @@ import { resolveChildCwd, type SubagentProvider, type SubagentRun, type Subagent
 import { scrubbedParentEnv, type SubprocessHandle, type SubprocessSpawnSpec } from "@deepseek-ai/dsh-subprocess";
 import { credentialRef } from "@deepseek-ai/dsh-credentials";
 import { resolveDshHome } from "@deepseek-ai/dsh-home-paths";
-import type { PermissionTier } from "./permissions.js";
+import { effectiveTier, type PermissionTier } from "./permissions.js";
 import { startRun } from "./run.js";
 
 export const name = "tack-agent-claude";
@@ -59,6 +59,8 @@ interface ProviderContext {
   approval: { request(req: { agent: SubagentStartRequest["parent"]; toolName: string; reason?: string; signal?: AbortSignal }): Promise<ApprovalOutcome> };
   credentials: { resolve(ref: ReturnType<typeof credentialRef>): Promise<{ value: string } | undefined> };
   logger: { warn(message: string, ...args: unknown[]): void };
+  /** Reads a service when present; the sandbox policy caps Claude's tier by the session's mode. */
+  get(name: "sandboxPolicy"): { resolve(request: { session: SubagentStartRequest["parent"]["session"] }): { mode: string } } | undefined;
 }
 
 export function resolveConfig(config: AgentClaudeConfig = {}): Resolved {
@@ -113,17 +115,20 @@ class ClaudeProvider implements SubagentProvider {
   async start(request: SubagentStartRequest): Promise<SubagentRun> {
     const cwd = resolveChildCwd("agent-claude", undefined, request.parent.session.header.cwd);
     const env = await this.environment();
+    const sandboxMode = this.ctx.get("sandboxPolicy")?.resolve({ session: request.parent.session }).mode;
+    const { tier, allowAsks } = effectiveTier(this.config.permissions, sandboxMode);
     const toolPrefix = this.name;
     return startRun(request, {
       cwd,
       env,
-      permissions: this.config.permissions,
+      permissions: tier,
       maxTurns: this.config.maxTurns,
       disposeGraceMs: this.config.disposeGraceMs,
       ...(this.config.model !== undefined && { model: this.config.model }),
       ...(this.config.maxBudgetUsd !== undefined && { maxBudgetUsd: this.config.maxBudgetUsd }),
       spawn: (spec) => this.ctx.subprocess.spawn(spec),
       approve: async (toolName, reason, signal) => {
+        if (allowAsks) return true;
         const outcome = await this.ctx.approval.request({ agent: request.parent, toolName: `${toolPrefix}.${toolName}`, reason, signal });
         return outcome === "allowed-once" || (outcome === "unavailable" && this.config.whenNoApprover === "allow");
       },

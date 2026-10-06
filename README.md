@@ -102,12 +102,26 @@ printf %s "$ANTHROPIC_API_KEY" | tack auth set ANTHROPIC_API_KEY
 tack run --profile supervise "npm test fails; get it passing"
 ```
 
+In the browser, install the provider in the web profile and pick
+**Supervise** for a new session (next to the runtime's own presets):
+
+```sh
+tack plugin add ./packages/agent-claude --profile web
+tack web
+```
+
+The delegation shows as a card (status, summary, files changed, commands,
+tests, cost) with Claude's tool calls nested under it, and Claude's asks
+appear in the approval panel.
+
 Claude runs in the session's working directory, with its own configuration
 under `$TACK_HOME/claude` (never `~/.claude`, and no ambient `ANTHROPIC_*` or
 `CLAUDE_*` variables). It reads freely and edits inside the workspace; anything
 else (commands, for example) asks through Tack's approval service. A headless
 `tack run` has no one to answer, so those asks are denied unless the profile
-says otherwise. Set the provider row in `$TACK_HOME/profiles/supervise/cordis.patch.yml`
+says otherwise. The session's permission mode caps Claude: a read-only
+session gets a read-only Claude, and in a full-access session its asks are
+granted without prompting. Set the provider row in `$TACK_HOME/profiles/supervise/cordis.patch.yml`
 (or a `--patch` file):
 
 ```yaml
