@@ -30,6 +30,7 @@ const STYLE_ID = "@tack/delegate/card.css";
 const STATUS_LABEL: Record<CardModel["state"], string> = {
   preparing: "Preparing",
   running: "Working",
+  background: "Background",
   completed: "Completed",
   partial: "Partial",
   failed: "Failed",

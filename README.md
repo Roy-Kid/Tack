@@ -114,6 +114,13 @@ The delegation shows as a card (status, summary, files changed, commands,
 tests, cost) with Claude's tool calls nested under it, and Claude's asks
 appear in the approval panel.
 
+In the browser, a delegation can also run in the background: the supervisor
+keeps helping while Claude works, the job appears in the session's background
+jobs (live progress; `job_kill` stops it), and when it finishes the
+supervisor is woken with a notice and reads the report with `job_output`.
+`tack run` always delegates in the foreground, since it exits when the
+supervisor is done.
+
 Claude runs in the session's working directory, with its own configuration
 under `$TACK_HOME/claude` (never `~/.claude`, and no ambient `ANTHROPIC_*` or
 `CLAUDE_*` variables). It reads freely and edits inside the workspace; anything
@@ -121,7 +128,9 @@ else (commands, for example) asks through Tack's approval service. A headless
 `tack run` has no one to answer, so those asks are denied unless the profile
 says otherwise. The session's permission mode caps Claude: a read-only
 session gets a read-only Claude, and in a full-access session its asks are
-granted without prompting. Set the provider row in `$TACK_HOME/profiles/supervise/cordis.patch.yml`
+granted without prompting. A background delegation has no turn to ask in, so
+its asks follow `whenNoApprover` (deny by default); for background work in a
+trusted workspace, set `whenNoApprover: allow` or `permissions: full`. Set the provider row in `$TACK_HOME/profiles/supervise/cordis.patch.yml`
 (or a `--patch` file):
 
 ```yaml

@@ -99,7 +99,9 @@
                 `delegate` tool, giving it a complete, self-contained task and
                 how to verify it. Report the delegated agent's outcome to the
                 user accurately, including failures. Answer directly when no
-                work is needed.
+                work is needed. Delegate long work in the background and keep
+                helping; when its completion notice arrives, read the report
+                with job_output and tell the user the outcome.
               suffix: Your working directory is {{cwd}}.
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
@@ -111,6 +113,10 @@
             name: '@deepseek-ai/dsh-tool-fs-search'
             config:
               sampleOverCapGlobResults: false
+          # job_list / job_output / job_kill, and the controller that serves
+          # background delegations and wakes the supervisor when one finishes.
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
           - id: compaction
             name: cordis:group
             group: true
@@ -146,6 +152,8 @@
           - id: tack-delegate
             name: '@tack/delegate'
             config:
+              # The web host outlives a turn, so delegations may run as jobs.
+              background: true
               agents:
                 claude:
                   provider: claude

@@ -1,6 +1,6 @@
 {
   "name": "@tack/delegate",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Tack's delegate tool: hand work to a delegated agent runtime through DSH's subagent contract and mirror its run into the session",
   "license": "MIT",
   "type": "module",

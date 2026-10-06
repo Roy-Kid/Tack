@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, wri
 import { join } from "node:path";
 import { type Browser, chromium } from "playwright-core";
 import { FAKE_ANTHROPIC_KEY, type FakeAnthropic, startFakeAnthropic } from "../fake-anthropic.js";
-import { FAKE_KEY, FAKE_KEY_ENV, type FakeModel, fakeProviderCommands, startFakeModel } from "../fake-model.js";
+import { contentText, FAKE_KEY, FAKE_KEY_ENV, type FakeModel, fakeProviderCommands, startFakeModel } from "../fake-model.js";
 import { REPO_ROOT, spawnTack, tempHome } from "../helpers.js";
 import { type ChromeServer, serveChrome } from "../web-chrome-server.js";
 
@@ -134,6 +134,63 @@ describe("delegation in the browser", () => {
         } catch {
           // The page may already be gone.
         }
+      }
+      await page.close();
+    }
+  });
+
+  it("runs a delegation in the background and reports it when the job finishes", async () => {
+    const final = "The background delegation finished: all done.";
+    const summary = "Read the notes in the background.";
+    model.script([
+      { tool: "delegate", arguments: { agent: "claude", description: "Background read", task: "Read notes.txt.", background: true } },
+      { text: "Started; I'll report back." },
+      // Woken by the job's completion notice.
+      { tool: "job_output", arguments: { job_id: "delegate-1" } },
+      { text: final },
+    ]);
+    claude.script([
+      { tool: "Glob", input: { pattern: "*.txt" } },
+      { tool: "StructuredOutput", input: { status: "completed", summary, filesChanged: [] } },
+      { text: "Done." },
+    ]);
+    const before = model.agentRequests().length;
+    const page = await browser.newPage();
+    try {
+      await page.goto(server.url);
+      await page.waitForSelector("[data-tack-brand-name]", { timeout: 60_000 });
+      await page.getByText("New Session").first().click();
+      const composer = page.locator("[contenteditable=true]").first();
+      await composer.click();
+      await composer.pressSequentially("Read the notes in the background");
+      await page.keyboard.press("Enter");
+
+      await page.getByText(final).first().waitFor({ timeout: 90_000 });
+      const requests = model.agentRequests().slice(before);
+      expect(requests).toHaveLength(4);
+      const toolText = (index: number) =>
+        requests[index]!.messages.filter((message) => message.role === "tool").map((message) => contentText(message.content)).join("\n");
+      // The call returned at once with the job id.
+      expect(toolText(1)).toContain("Started a background delegation to claude as job delegate-1");
+      // The jobs service woke the supervisor with a completion notice.
+      const woken = requests[2]!.messages.map((message) => contentText(message.content)).join("\n");
+      expect(woken).toMatch(/delegate-1.*finished/s);
+      // job_output handed over the rendered report.
+      expect(toolText(3)).toContain(`Delegated to claude: completed.\n${summary}`);
+
+      await page.getByText(/^Completed in /).first().click();
+      await page.getByText("Called tools").first().click();
+      const card = page.locator("[data-tack-delegate-card]").first();
+      await card.waitFor({ timeout: 30_000 });
+      expect(await card.getAttribute("data-state")).toBe("background");
+      expect(await card.textContent()).toContain("job delegate-1");
+    } finally {
+      if (process.env.TACK_E2E_SCREENSHOTS) {
+        await page.screenshot({ path: join(process.env.TACK_E2E_SCREENSHOTS, "delegate-background.png"), fullPage: true }).catch(() => {});
+        writeFileSync(
+          join(process.env.TACK_E2E_SCREENSHOTS, "delegate-background.json"),
+          JSON.stringify({ supervisor: model.agentRequests().slice(before), claude: claude.agentRequests().length, server: server.output().slice(-4000) }, null, 1),
+        );
       }
       await page.close();
     }

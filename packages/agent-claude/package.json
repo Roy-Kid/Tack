@@ -1,6 +1,6 @@
 {
   "name": "@tack/agent-claude",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Claude Agent SDK as a delegated agent runtime for Tack (a DSH subagent provider)",
   "license": "MIT",
   "type": "module",

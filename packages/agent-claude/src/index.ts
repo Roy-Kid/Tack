@@ -63,6 +63,15 @@ interface ProviderContext {
   get(name: "sandboxPolicy"): { resolve(request: { session: SubagentStartRequest["parent"]["session"] }): { mode: string } } | undefined;
 }
 
+/**
+ * An ask the approval service refused to pose. Outside an open turn (a
+ * background delegation) nobody can answer, which is `unavailable`, so
+ * `whenNoApprover` decides; any other failure denies.
+ */
+export function unansweredAsk(error: unknown): ApprovalOutcome {
+  return error instanceof Error && /outside an open turn/.test(error.message) ? "unavailable" : "rejected";
+}
+
 export function resolveConfig(config: AgentClaudeConfig = {}): Resolved {
   const permissions = config.permissions ?? "edit";
   if (!TIERS.includes(permissions)) throw new Error(`agent-claude: permissions must be one of ${TIERS.join(", ")}`);
@@ -129,7 +138,9 @@ class ClaudeProvider implements SubagentProvider {
       spawn: (spec) => this.ctx.subprocess.spawn(spec),
       approve: async (toolName, reason, signal) => {
         if (allowAsks) return true;
-        const outcome = await this.ctx.approval.request({ agent: request.parent, toolName: `${toolPrefix}.${toolName}`, reason, signal });
+        const outcome = await this.ctx.approval
+          .request({ agent: request.parent, toolName: `${toolPrefix}.${toolName}`, reason, signal })
+          .catch((error: unknown) => unansweredAsk(error));
         return outcome === "allowed-once" || (outcome === "unavailable" && this.config.whenNoApprover === "allow");
       },
       onError: (error, stopReason) => this.ctx.logger.warn(`agent-claude "${this.name}": run failed (${stopReason}): %o`, error),
