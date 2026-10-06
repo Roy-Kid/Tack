@@ -17,9 +17,9 @@ import { defineTool } from "@deepseek-ai/dsh-tools";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { SubagentProvider, SubagentResult, SubagentRun, SubagentStartRequest } from "@deepseek-ai/dsh-subagent";
 import type {} from "@tack/dsh-shims/subagent-events";
-import type { DelegationRecord, DelegationReport } from "./record.js";
+import type { BackgroundDelegation, DelegationRecord, DelegationReport } from "./record.js";
 
-export type { DelegationRecord, DelegationReport } from "./record.js";
+export type { BackgroundDelegation, DelegationRecord, DelegationReport } from "./record.js";
 
 export const name = "tack-delegate";
 export const inject = ["tools", "subagents"];
@@ -34,6 +34,8 @@ export interface AgentEntry {
 
 export interface DelegateConfig {
   toolName?: string;
+  /** Offer `background`: the run becomes a job of the session and the call returns at once. Only where the host outlives the turn. */
+  background?: boolean;
   agents: Record<string, AgentEntry>;
 }
 
@@ -87,7 +89,28 @@ interface SubagentsService {
   getProvider(name: string): SubagentProvider | undefined;
   start(name: string, request: SubagentStartRequest): Promise<SubagentRun>;
 }
+/** The parts of DSH's jobs service a background delegation uses. */
+export interface JobHandle {
+  append(text: string, options?: { channel?: "stdout" | "stderr" | "log" }): void;
+  updateProgress(line: string): void;
+}
+export interface JobOutcome {
+  status: "completed" | "killed" | "failed";
+  detail?: string;
+  result?: string;
+}
+interface JobsService {
+  start(spec: {
+    kind: string;
+    label: string;
+    owner: unknown;
+    run(job: JobHandle): { cancel(reason?: string): void; done: Promise<JobOutcome> };
+  }): string;
+}
+
 interface DelegateContext {
+  /** Optional services: the jobs registry serves background delegations. */
+  get(name: "jobs"): JobsService | undefined;
   tools: ToolsService;
   subagents: SubagentsService;
   on(event: "subagent/provider-added", listener: (provider: SubagentProvider) => void): () => void;
@@ -117,7 +140,8 @@ export function validateConfig(config: unknown): Required<DelegateConfig> {
       throw new Error(`tack-delegate: agents.${agentName}.description is required`);
     }
   }
-  return { toolName: input.toolName ?? "delegate", agents };
+  if (input.background !== undefined && typeof input.background !== "boolean") throw new Error("tack-delegate: config.background must be a boolean");
+  return { toolName: input.toolName ?? "delegate", background: input.background ?? false, agents };
 }
 
 /** JSON-normalize a value so a session append can never fail on payload shape. */
@@ -165,61 +189,101 @@ export function renderRecord(record: DelegationRecord): string {
   return lines.filter((line) => line.trim() !== "").join("\n");
 }
 
-/** Mirror one run's events into the delegating session; returns the observed totals. */
-async function interpret(
-  events: AsyncIterable<RunEvent>,
-  agentName: string,
-  exec: DelegateExec,
-  session: Agent["session"],
-): Promise<{ toolCalls: number; filesChanged: Set<string>; costUsd?: number; turns?: number; close(): void }> {
+/** Where one run's activity goes: nested sub-calls in the session, or a background job's log. */
+interface RunSink {
+  toolStart(id: string, name: string, input: unknown): void;
+  toolEnd(id: string, name: string, input: unknown, isError: boolean, summary: string): void;
+  progress(text: string): void;
+  /** A call the run ended without settling. */
+  unsettled(id: string, name: string, input: unknown): void;
+}
+
+interface Observed {
+  toolCalls: number;
+  filesChanged: Set<string>;
+  costUsd?: number;
+  turns?: number;
+  close(): void;
+}
+
+/** Nested `tool/ptc-dispatch*` sub-calls under the delegate call (durable; needs the call's open turn). */
+function sessionSink(session: Agent["session"], exec: DelegateExec, agentName: string): RunSink {
+  const subCallId = (id: string) => `${exec.callId}:${agentName}:${id}`;
+  const end = (id: string, name: string, input: unknown, isError: boolean, text: string) =>
+    session.append("tool/ptc-dispatch", {
+      rootCallId: exec.rootCallId,
+      parentCallId: exec.callId,
+      subCallId: subCallId(id),
+      name,
+      arguments: input,
+      isError,
+      content: [{ type: "text", text }],
+    } as never);
+  return {
+    toolStart: (id, name, input) =>
+      session.append("tool/ptc-dispatch-start", { rootCallId: exec.rootCallId, parentCallId: exec.callId, subCallId: subCallId(id), name, arguments: input } as never),
+    toolEnd: end,
+    progress: () => {},
+    unsettled: (id, name, input) => end(id, name, input, true, "The delegated run ended before this call settled."),
+  };
+}
+
+const clip = (text: string, limit: number) => {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > limit ? `${flat.slice(0, limit)}…` : flat;
+};
+
+/** The one argument that identifies a call at a glance (a command, a path, a pattern). */
+function brief(input: unknown): string {
+  if (typeof input !== "object" || input === null) return "";
+  const fields = input as Record<string, unknown>;
+  for (const key of ["command", "file_path", "notebook_path", "path", "pattern", "url", "query"]) {
+    if (typeof fields[key] === "string") return clip(fields[key], 120);
+  }
+  return clip(JSON.stringify(input), 120);
+}
+
+/** Transient log lines and a progress line on a background job. */
+export function jobSink(job: JobHandle): RunSink {
+  let steps = 0;
+  const log = (line: string) => job.append(`${line}\n`, { channel: "log" });
+  return {
+    toolStart: (_id, name, input) => {
+      steps += 1;
+      log(`→ ${name}${brief(input) === "" ? "" : ` ${brief(input)}`}`);
+      job.updateProgress(`${name} · ${steps} step${steps === 1 ? "" : "s"}`);
+    },
+    toolEnd: (_id, name, _input, isError, summary) => log(`${isError ? "✗" : "✓"} ${name}${summary.trim() === "" ? "" : `: ${clip(summary, 200)}`}`),
+    progress: (text) => log(clip(text, 400)),
+    unsettled: (_id, name) => log(`✗ ${name}: the run ended before this call settled`),
+  };
+}
+
+/** Consume one run's events into a sink; returns the observed totals. */
+async function observe(events: AsyncIterable<RunEvent>, agentName: string, sink: RunSink): Promise<Observed> {
   const open = new Map<string, { name: string; input: unknown }>();
-  const observed: { toolCalls: number; filesChanged: Set<string>; costUsd?: number; turns?: number; close(): void } = {
+  const observed: Observed = {
     toolCalls: 0,
     filesChanged: new Set(),
     close: () => {
-      for (const [id, call] of open) {
-        session.append("tool/ptc-dispatch", {
-          rootCallId: exec.rootCallId,
-          parentCallId: exec.callId,
-          subCallId: subCallId(id),
-          name: call.name,
-          arguments: call.input,
-          isError: true,
-          content: [{ type: "text", text: "The delegated run ended before this call settled." }],
-        } as never);
-      }
+      for (const [id, call] of open) sink.unsettled(id, call.name, call.input);
       open.clear();
     },
   };
-  const subCallId = (id: string) => `${exec.callId}:${agentName}:${id}`;
   for await (const event of events) {
     switch (event.type) {
       case "tool/start": {
         const call = { name: `${agentName}.${event.name}`, input: json(event.input) };
         open.set(event.id, call);
         observed.toolCalls += 1;
-        session.append("tool/ptc-dispatch-start", {
-          rootCallId: exec.rootCallId,
-          parentCallId: exec.callId,
-          subCallId: subCallId(event.id),
-          name: call.name,
-          arguments: call.input,
-        } as never);
+        sink.toolStart(event.id, call.name, call.input);
         break;
       }
       case "tool/end": {
         const call = open.get(event.id);
         if (call === undefined) break;
         open.delete(event.id);
-        session.append("tool/ptc-dispatch", {
-          rootCallId: exec.rootCallId,
-          parentCallId: exec.callId,
-          subCallId: subCallId(event.id),
-          name: call.name,
-          arguments: call.input,
-          isError: event.isError,
-          content: [{ type: "text", text: event.summary }],
-        } as never);
+        sink.toolEnd(event.id, call.name, call.input, event.isError, event.summary);
         break;
       }
       case "file/changed":
@@ -230,41 +294,47 @@ async function interpret(
         if (event.turns !== undefined) observed.turns = event.turns;
         break;
       case "progress":
+        sink.progress(event.text);
         break;
     }
   }
   return observed;
 }
 
-async function delegateOnce(
+type DelegateArgs = { agent: string; description: string; task: string; context?: string; background?: boolean };
+
+function resolveAgent(ctx: DelegateContext, config: Required<DelegateConfig>, agentName: string): { entry: AgentEntry; provider: SubagentProvider } {
+  const entry = config.agents[agentName];
+  const provider = entry === undefined ? undefined : ctx.subagents.getProvider(entry.provider);
+  if (entry === undefined || provider === undefined) throw new Error(`delegate: agent "${agentName}" is not available`);
+  return { entry, provider };
+}
+
+/** Run one delegation to its record: start, observe, settle, dispose. `cancelled` when `signal` ended it. */
+async function runDelegation(
   ctx: DelegateContext,
   config: Required<DelegateConfig>,
-  args: { agent: string; description: string; task: string; context?: string },
-  exec: DelegateExec,
+  args: DelegateArgs,
+  parent: Agent,
+  signal: AbortSignal,
+  sink: RunSink,
 ): Promise<DelegationRecord> {
-  const parent = exec.agent;
-  if (parent === undefined) throw new Error("delegate requires a calling agent");
-  const entry = config.agents[args.agent];
-  const provider = entry === undefined ? undefined : ctx.subagents.getProvider(entry.provider);
-  if (entry === undefined || provider === undefined) throw new Error(`delegate: agent "${args.agent}" is not available`);
-
+  const { entry, provider } = resolveAgent(ctx, config, args.agent);
   const run = await ctx.subagents.start(entry.provider, {
     label: args.description,
     prompt: [{ type: "text", text: prompt(args.task, args.context) }],
     parent,
-    signal: exec.signal,
+    signal,
     ...(provider.capabilities.outputSchema && { outputSchema: DELEGATION_RESULT_SCHEMA as never }),
   });
   try {
-    const observing = run.events === undefined ? undefined : interpret(run.events, args.agent, exec, parent.session);
+    const observing = run.events === undefined ? undefined : observe(run.events, args.agent, sink);
     const result = await run.result;
-    let observed: Awaited<NonNullable<typeof observing>> | undefined;
+    let observed: Observed | undefined;
     if (observing !== undefined) {
       observed = await Promise.race([observing, new Promise<undefined>((done) => setTimeout(() => done(undefined), DRAIN_GRACE_MS).unref())]);
       observed?.close();
     }
-    if (result.stopReason === "aborted" && exec.signal.aborted) throw new Error("delegation cancelled");
-
     const report = asReport(result.structured);
     const text = textOf(result);
     const filesChanged = [...new Set([...(report?.filesChanged ?? []), ...(observed?.filesChanged ?? [])])].sort();
@@ -289,6 +359,54 @@ async function delegateOnce(
   }
 }
 
+/** A settled delegation as a background job's outcome; `result` is what `job_output` gives the model. */
+export function jobOutcome(record: DelegationRecord, killed: boolean): JobOutcome {
+  const result = renderRecord(record);
+  if (killed || record.status === "cancelled") return { status: "killed", detail: "delegation cancelled", result };
+  if (record.status === "failed") return { status: "failed", detail: clip(record.diagnostic ?? record.summary, 300), result };
+  return { status: "completed", ...(record.status === "partial" && { detail: "partially completed" }), result };
+}
+
+function startBackground(ctx: DelegateContext, config: Required<DelegateConfig>, args: DelegateArgs, parent: Agent): BackgroundDelegation {
+  const jobs = ctx.get("jobs");
+  if (jobs === undefined) throw new Error("delegate: background delegation needs the jobs service; this composition has none");
+  resolveAgent(ctx, config, args.agent);
+  const jobId = jobs.start({
+    kind: "delegate",
+    label: `${args.agent}: ${args.description}`,
+    owner: parent.id,
+    run: (job) => {
+      const controller = new AbortController();
+      const done = runDelegation(ctx, config, args, parent, controller.signal, jobSink(job)).then(
+        (record) => jobOutcome(record, controller.signal.aborted),
+        (error: unknown): JobOutcome =>
+          controller.signal.aborted
+            ? { status: "killed", detail: "delegation cancelled" }
+            : { status: "failed", detail: clip(error instanceof Error ? error.message : String(error), 300) },
+      );
+      return { cancel: (reason?: string) => controller.abort(new Error(reason ?? "delegation killed")), done };
+    },
+  });
+  return { agent: args.agent, description: args.description, background: true, jobId: String(jobId), status: "running" };
+}
+
+async function delegate(ctx: DelegateContext, config: Required<DelegateConfig>, args: DelegateArgs, exec: DelegateExec): Promise<DelegationRecord | BackgroundDelegation> {
+  const parent = exec.agent;
+  if (parent === undefined) throw new Error("delegate requires a calling agent");
+  if (args.background === true && config.background) return startBackground(ctx, config, args, parent);
+  const record = await runDelegation(ctx, config, args, parent, exec.signal, sessionSink(parent.session, exec, args.agent));
+  if (record.status === "cancelled" && exec.signal.aborted) throw new Error("delegation cancelled");
+  return record;
+}
+
+/** The model-facing text of the tool's value. */
+export function renderValue(value: DelegationRecord | BackgroundDelegation): string {
+  if ("background" in value) {
+    return `Started a background delegation to ${value.agent} as job ${value.jobId}. You will get a notice when it finishes; read its report with job_output.`;
+  }
+  return renderRecord(value);
+}
+
 function definition(ctx: DelegateContext, config: Required<DelegateConfig>, available: readonly string[]) {
   const catalog = available.map((agentName) => `- ${agentName}: ${config.agents[agentName]!.description}`).join("\n");
   return defineTool({
@@ -296,6 +414,9 @@ function definition(ctx: DelegateContext, config: Required<DelegateConfig>, avai
     description: [
       "Delegate open-ended work to an autonomous agent runtime. The agent works in the session's workspace with its own tools and loop, then reports back; you receive a short structured summary, not its transcript.",
       "Give a self-contained task: the goal, relevant paths, constraints, and how to verify the result (for example the test command). Do not micromanage individual steps.",
+      ...(config.background
+        ? ["For long work, set background: the call returns at once, you keep helping the user, and a notice arrives when the agent finishes; then read its report with job_output (job_kill stops it)."]
+        : []),
       `Available agents:\n${catalog}`,
     ].join("\n\n"),
     parameters: {
@@ -303,14 +424,16 @@ function definition(ctx: DelegateContext, config: Required<DelegateConfig>, avai
       description: { type: "string", required: true, description: "A short (3-6 word) label for the delegated task, for display." },
       task: { type: "string", required: true, description: "The complete, self-contained task for the agent." },
       context: { type: "string", description: "Optional context the agent cannot discover itself (decisions, constraints, prior findings)." },
+      ...(config.background && {
+        background: { type: "boolean", description: "Run in the background and return at once; a notice arrives when it finishes." },
+      }),
     },
     output: {
       schema: { type: "json" },
-      render: (_args: unknown, value: unknown) => [{ type: "text" as const, text: renderRecord(value as DelegationRecord) }],
+      render: (_args: unknown, value: unknown) => [{ type: "text" as const, text: renderValue(value as DelegationRecord | BackgroundDelegation) }],
       presentationMeta: (_args: unknown, value: unknown) => value as never,
     },
-    execute: (args: { agent: string; description: string; task: string; context?: string }, exec: DelegateExec) =>
-      delegateOnce(ctx, config, args, exec) as never,
+    execute: (args: DelegateArgs, exec: DelegateExec) => delegate(ctx, config, args, exec) as never,
   } as never);
 }
 

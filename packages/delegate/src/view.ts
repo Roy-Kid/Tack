@@ -4,9 +4,9 @@
  * result `meta`), and the nested sub-calls the runtime mirrored. Pure, so the
  * browser half stays a thin renderer.
  */
-import type { DelegationRecord } from "./record.js";
+import type { BackgroundDelegation, DelegationRecord } from "./record.js";
 
-export type CardState = "preparing" | "running" | "completed" | "partial" | "failed" | "cancelled" | "error";
+export type CardState = "preparing" | "running" | "background" | "completed" | "partial" | "failed" | "cancelled" | "error";
 
 /** The parts of the runtime's tool-call block the card reads. */
 export interface CallBlock {
@@ -55,6 +55,12 @@ function asRecord(meta: unknown): DelegationRecord | undefined {
   return typeof record.status === "string" && typeof record.summary === "string" && typeof record.agent === "string" ? (record as DelegationRecord) : undefined;
 }
 
+function asBackground(meta: unknown): BackgroundDelegation | undefined {
+  if (typeof meta !== "object" || meta === null) return undefined;
+  const value = meta as Partial<BackgroundDelegation>;
+  return value.background === true && typeof value.jobId === "string" && typeof value.agent === "string" ? (value as BackgroundDelegation) : undefined;
+}
+
 function contentText(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
@@ -83,6 +89,17 @@ export function cardModel(phase: "preparing" | "start" | "result", block: CallBl
   if (phase === "preparing") return { ...base, state: "preparing", headline: "Preparing a delegation" };
   if (phase === "start") {
     return { ...base, state: "running", headline: [description, steps > 0 ? `${steps} step${steps === 1 ? "" : "s"}` : "starting"].filter(Boolean).join(" · ") };
+  }
+  const background = phase === "result" ? asBackground(block.meta) : undefined;
+  if (background !== undefined) {
+    return {
+      ...base,
+      agent: background.agent,
+      state: "background",
+      headline: `Running in the background · job ${background.jobId}`,
+      detail: `The supervisor is notified when job ${background.jobId} finishes and reads the report with job_output. The jobs panel shows its progress; job_kill stops it.`,
+      expandable: true,
+    };
   }
   if (record === undefined) {
     const text = block.error?.message ?? contentText(block.content);

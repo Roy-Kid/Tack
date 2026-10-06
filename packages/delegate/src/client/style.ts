@@ -5,7 +5,7 @@ export const CARD_CSS = `
 .tack-delegate-row:hover{color:var(--dsw-alias-label-secondary)}
 .tack-delegate-row[data-expandable]{cursor:pointer}
 .tack-delegate-dot{flex:none;width:6px;height:6px;margin:0 8px 0 5px;border-radius:999px;background:var(--dsw-alias-label-caption)}
-.tack-delegate-dot[data-state=running],.tack-delegate-dot[data-state=preparing]{background:var(--dsw-alias-brand-primary,var(--dsw-alias-label-secondary))}
+.tack-delegate-dot[data-state=running],.tack-delegate-dot[data-state=preparing],.tack-delegate-dot[data-state=background]{background:var(--dsw-alias-brand-primary,var(--dsw-alias-label-secondary))}
 .tack-delegate-dot[data-state=completed]{background:var(--dsw-alias-state-success-primary,#2e9e5b)}
 .tack-delegate-dot[data-state=partial],.tack-delegate-dot[data-state=cancelled]{background:var(--dsw-alias-state-warn-label,#c58a00)}
 .tack-delegate-dot[data-state=failed],.tack-delegate-dot[data-state=error]{background:var(--dsw-alias-state-error-primary,#d14343)}

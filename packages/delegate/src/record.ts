@@ -29,3 +29,12 @@ export interface DelegationRecord {
   costUsd?: number;
   turns?: number;
 }
+
+/** The value of a `delegate` call that started in the background (the call's `meta`). */
+export interface BackgroundDelegation {
+  agent: string;
+  description: string;
+  background: true;
+  jobId: string;
+  status: "running";
+}

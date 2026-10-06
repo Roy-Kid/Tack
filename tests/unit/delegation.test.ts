@@ -4,8 +4,8 @@
  * result mapping, and the supervisor's tool mask.
  */
 import { describe, expect, it } from "@rstest/core";
-import { renderRecord, validateConfig, type DelegationRecord } from "../../packages/delegate/src/index.js";
-import { resolveConfig } from "../../packages/agent-claude/src/index.js";
+import { apply as applyDelegate, jobOutcome, renderRecord, renderValue, validateConfig, type DelegationRecord } from "../../packages/delegate/src/index.js";
+import { resolveConfig, unansweredAsk } from "../../packages/agent-claude/src/index.js";
 import { EventQueue, EventTranslator } from "../../packages/agent-claude/src/events.js";
 import { decide, effectiveTier } from "../../packages/agent-claude/src/permissions.js";
 import { settle } from "../../packages/agent-claude/src/run.js";
@@ -281,5 +281,136 @@ describe("delegate card", () => {
   it("formats small costs and singular counts", () => {
     expect(formatFooter({ toolCalls: 1, costUsd: 0.0031, turns: 1 })).toBe("1 tool call · $0.0031 · 1 turn");
     expect(formatFooter({ toolCalls: 0 })).toBe("0 tool calls");
+  });
+});
+
+/** A delegate tool mounted on fake services, with one scripted run per start. */
+function delegateHarness(config: Record<string, unknown>, script: { events?: unknown[]; result?: Record<string, unknown>; hold?: boolean; throws?: string } = {}) {
+  const registered: { parameters: { properties: Record<string, unknown> }; execute(args: unknown, exec: unknown): Promise<unknown> }[] = [];
+  const jobs: { spec: { kind: string; label: string; owner: unknown; run(job: unknown): { cancel(reason?: string): void; done: Promise<unknown> } } }[] = [];
+  const starts: { signal: AbortSignal }[] = [];
+  const provider = { name: "claude", capabilities: { outputSchema: true } };
+  const ctx = {
+    get: (name: string) =>
+      name === "jobs"
+        ? {
+            start: (spec: (typeof jobs)[number]["spec"]) => {
+              jobs.push({ spec });
+              return `delegate-${jobs.length}`;
+            },
+          }
+        : undefined,
+    tools: { register: (definition: (typeof registered)[number]) => (registered.push(definition), () => {}) },
+    subagents: {
+      getProvider: (name: string) => (name === "claude" ? provider : undefined),
+      start: async (_name: string, request: { signal: AbortSignal }) => {
+        starts.push(request);
+        if (script.throws !== undefined) throw new Error(script.throws);
+        const result = script.hold
+          ? new Promise((resolve) => request.signal.addEventListener("abort", () => resolve({ output: [], stopReason: "aborted" })))
+          : Promise.resolve(script.result ?? { output: [{ type: "text", text: "Done." }], stopReason: "completed", structured: { status: "completed", summary: "All done.", filesChanged: ["a.js"] } });
+        return {
+          id: "run-1",
+          result,
+          dispose: async () => {},
+          events: (async function* () {
+            for (const event of script.events ?? []) yield event;
+          })(),
+        };
+      },
+    },
+    on: () => () => {},
+    effect: () => {},
+    logger: { info: () => {} },
+  };
+  applyDelegate(ctx as never, { agents: { claude: { provider: "claude", description: "Claude." } }, ...config });
+  const parent = { id: "session-1", session: { append: () => {} } };
+  const exec = { callId: "c1", rootCallId: "c1", agent: parent, signal: new AbortController().signal };
+  const job = { lines: [] as string[], progress: [] as string[] };
+  const handle = { append: (text: string) => job.lines.push(text.trimEnd()), updateProgress: (line: string) => job.progress.push(line) };
+  return { tool: () => registered.at(-1)!, jobs, starts, exec, job, handle };
+}
+
+describe("background delegation", () => {
+  const args = { agent: "claude", description: "Long task", task: "Do it.", background: true };
+
+  it("offers the background parameter only when configured", () => {
+    expect(delegateHarness({}).tool().parameters.properties).not.toHaveProperty("background");
+    expect(delegateHarness({ background: true }).tool().parameters.properties).toHaveProperty("background");
+  });
+
+  it("ignores background when the composition does not allow it", async () => {
+    const harness = delegateHarness({});
+    const value = (await harness.tool().execute(args, harness.exec)) as { status: string };
+    expect(harness.jobs).toHaveLength(0);
+    expect(value.status).toBe("completed");
+  });
+
+  it("starts a job owned by the session and returns at once", async () => {
+    const harness = delegateHarness({ background: true });
+    const value = await harness.tool().execute(args, harness.exec);
+    expect(value).toEqual({ agent: "claude", description: "Long task", background: true, jobId: "delegate-1", status: "running" });
+    expect(harness.jobs[0]!.spec).toMatchObject({ kind: "delegate", label: "claude: Long task", owner: "session-1" });
+    expect(harness.starts).toHaveLength(0);
+    expect(renderValue(value as never)).toContain("job delegate-1");
+  });
+
+  it("logs the run into the job and settles with the rendered report", async () => {
+    const harness = delegateHarness(
+      { background: true },
+      {
+        events: [
+          { type: "progress", text: "Looking around." },
+          { type: "tool/start", id: "t1", name: "Bash", input: { command: "npm test" } },
+          { type: "tool/end", id: "t1", isError: false, summary: "1 passing" },
+        ],
+      },
+    );
+    await harness.tool().execute(args, harness.exec);
+    const outcome = await harness.jobs[0]!.spec.run(harness.handle).done;
+    expect(harness.job.lines).toEqual(["Looking around.", "→ claude.Bash npm test", "✓ claude.Bash: 1 passing"]);
+    expect(harness.job.progress).toEqual(["claude.Bash · 1 step"]);
+    expect(outcome).toEqual({ status: "completed", result: expect.stringContaining("Delegated to claude: completed.\nAll done.\nFiles changed: a.js") });
+  });
+
+  it("maps a failed run to a failed job with its diagnostic", async () => {
+    const harness = delegateHarness({ background: true }, { result: { output: [], stopReason: "error", diagnostic: "Claude reached its turn limit." } });
+    await harness.tool().execute(args, harness.exec);
+    expect(await harness.jobs[0]!.spec.run(harness.handle).done).toMatchObject({ status: "failed", detail: "Claude reached its turn limit." });
+  });
+
+  it("job_kill cancels the run", async () => {
+    const harness = delegateHarness({ background: true }, { hold: true });
+    await harness.tool().execute(args, harness.exec);
+    const hooks = harness.jobs[0]!.spec.run(harness.handle);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    hooks.cancel("stop");
+    expect(harness.starts[0]!.signal.aborted).toBe(true);
+    expect(await hooks.done).toMatchObject({ status: "killed", detail: "delegation cancelled" });
+  });
+
+  it("never rejects when the run cannot start", async () => {
+    const harness = delegateHarness({ background: true }, { throws: "agent-claude: no Anthropic key" });
+    await harness.tool().execute(args, harness.exec);
+    expect(await harness.jobs[0]!.spec.run(harness.handle).done).toEqual({ status: "failed", detail: "agent-claude: no Anthropic key" });
+  });
+
+  it("maps outcomes for every record status", () => {
+    const record: DelegationRecord = { agent: "claude", runId: "r", status: "partial", stopReason: "completed", summary: "Half.", toolCalls: 0, filesChanged: [] };
+    expect(jobOutcome(record, false)).toMatchObject({ status: "completed", detail: "partially completed" });
+    expect(jobOutcome({ ...record, status: "cancelled" }, false).status).toBe("killed");
+    expect(jobOutcome({ ...record, status: "completed" }, true).status).toBe("killed");
+  });
+
+  it("shows a background card", () => {
+    expect(cardModel("result", { meta: { agent: "claude", description: "Long task", background: true, jobId: "delegate-2", status: "running" } })).toMatchObject({
+      state: "background",
+      headline: "Running in the background · job delegate-2",
+    });
+  });
+
+  it("lets whenNoApprover decide asks posed outside a turn", () => {
+    expect(unansweredAsk(new Error("approval.request() outside an open turn: …"))).toBe("unavailable");
+    expect(unansweredAsk(new Error("boom"))).toBe("rejected");
   });
 });
