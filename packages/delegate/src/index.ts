@@ -17,6 +17,9 @@ import { defineTool } from "@deepseek-ai/dsh-tools";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { SubagentProvider, SubagentResult, SubagentRun, SubagentStartRequest } from "@deepseek-ai/dsh-subagent";
 import type {} from "@tack/dsh-shims/subagent-events";
+import type { DelegationRecord, DelegationReport } from "./record.js";
+
+export type { DelegationRecord, DelegationReport } from "./record.js";
 
 export const name = "tack-delegate";
 export const inject = ["tools", "subagents"];
@@ -76,33 +79,6 @@ export const DELEGATION_RESULT_SCHEMA = {
     followUps: { type: "array", items: { type: "string" } },
   },
 } as const;
-
-export interface DelegationReport {
-  status: "completed" | "partial" | "failed";
-  summary: string;
-  filesChanged: string[];
-  commands?: { command: string; exitCode: number }[];
-  tests?: { command: string; passed: boolean; details?: string };
-  artifacts?: { path: string; description: string }[];
-  followUps?: string[];
-}
-
-/** The persisted record of one delegation (the call's `meta`; also the tool's canonical value). */
-export interface DelegationRecord {
-  agent: string;
-  runId: string;
-  status: "completed" | "partial" | "failed" | "cancelled";
-  stopReason: string;
-  summary: string;
-  report?: DelegationReport;
-  /** The child's text answer when it returned no structured report. */
-  text?: string;
-  diagnostic?: string;
-  toolCalls: number;
-  filesChanged: string[];
-  costUsd?: number;
-  turns?: number;
-}
 
 interface ToolsService {
   register(definition: unknown): () => void;
@@ -338,8 +314,14 @@ function definition(ctx: DelegateContext, config: Required<DelegateConfig>, avai
   } as never);
 }
 
+/**
+ * Register the tool for the configured agents. A row with no agents registers
+ * nothing: web compositions mount one at the root so the runtime serves this
+ * package's browser half (the delegate card) wherever the tool itself lives.
+ */
 export function apply(ctx: DelegateContext, rawConfig: unknown): void {
   const config = validateConfig(rawConfig);
+  if (Object.keys(config.agents).length === 0) return;
   const providers = new Set(Object.values(config.agents).map((entry) => entry.provider));
   let dispose: (() => void) | undefined;
   const mount = () => {
