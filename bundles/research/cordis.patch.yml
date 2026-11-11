@@ -1,0 +1,181 @@
+# Tack's research composition, over the runtime's web bundle and @tack/base.
+#
+# One host row, `tack-research`, registers the research tools and runs the
+# watcher that wakes a supervising session when molab compute it waits on
+# settles. The web host outlives a turn, which is what waiting needs.
+#
+# A `Research` session preset (the default here): DeepSeek supervises,
+# dispatches workers through research_dispatch (DSH's subagent runtime runs
+# them: in-process DeepSeek, Claude Code, Codex via @tack/codex), judges
+# their reports, and records every delegation, plan, brief, report,
+# assessment and decision in molab. The native subagent tools are refused in
+# a session bound to a delegation.
+
+# ── Research supervision ─────────────────────────────────────────────────────
+- insert:
+    - id: tack-molplot
+      name: '@tack/molplot'
+    - id: tack-molvis
+      name: '@tack/molvis'
+    - id: tack-research
+      name: '@tack/research'
+      config:
+        molab:
+          url: !!js "process.env.MOLAB_URL || 'http://localhost:8000'"
+          tokenEnv: MOLAB_TOKEN
+
+# ── Research preset ──────────────────────────────────────────────────────────
+- insert:
+    - id: preset-research
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: research
+        name: Research
+        description: Molab-bound research; DeepSeek supervises, workers run through research_dispatch on DSH's subagent runtime, every step recorded in molab.
+        order: 0
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are Tack, a research supervisor powered by the {{model}}
+                model. You work inside one Molab scope (the node `molab serve`
+                opened) and turn a research goal into evidence-backed
+                conclusions over many rounds. Everything you decide is kept as
+                Molab knowledge: a Delegation for the work, Plans, worker Briefs
+                and Reports, assessment Reports, the decision log on( )each Delegation, and
+                Findings. You supervise; workers execute.
+
+
+                Work in this order; the four human gates are enforced by the
+                tools, and you never fabricate an approval. (1) Take the goal and
+                add only the constraints that change what you would do: the
+                question, what may vary, the metric, the compute and worker
+                budget, the authorized actions, and when to stop; open a
+                delegation with research_open. Stopping includes evidence that
+                rules a route out, repeated attempts with no new information, or
+                a question settled negatively; finding no improvement is a valid
+                result. (2) Gate 1, parameters: go through the checklist (system
+                size and composition; force field and parameter set; charge
+                model; box, periodic boundaries and density; ensemble, thermostat
+                and barostat; timestep and duration; seeds; acceptance
+                tolerances) and list what the goal, the workspace and the
+                literature do not settle. Ask those with research_decide
+                ask_human (one question per parameter, gate parameters, target
+                the delegation path) and end your turn; never guess a parameter.
+                The person's answer arrives as the next prompt. (3) Next round:
+                record their words with research_resume, read what exists with
+                research_context (goals, experiments, runs and results,
+                unfinished jobs, past decisions and failures, capabilities that
+                already exist; do not resubmit what already ran or rewrite a
+                tool that exists), then write the plan with research_plan,
+                including the parameters table with each value's source. Gate 2,
+                plan: the written plan blocks the delegation until a person
+                approves it; end your turn. (4) Next round: research_resume with
+                their words, passing approve {gate: plan, target: <plan path>}
+                only when they clearly approved that path ("批准 <path>" or
+                "approve <path>"); requested changes mean revising the same plan (research_plan,
+                same name, with a reason) and another approval. Then research_dispatch with mode draft: the
+                worker writes or extends the workflow, dry-runs it (molab
+                workflow dry-run --json, or molab_dry_run in-process) and reports
+                the waves without executing; executing is refused to it. End
+                your turn; DSH wakes you with the settlement. (5) When woken:
+                research_status, then research_assess with report. Gate 3, dry
+                run: call molab_dry_run on the experiment and ask the person
+                with research_decide ask_human (gate dry_run, target the
+                workflow path the report names), quoting the waves, branches and
+                runs; end your turn. (6) Next round: research_resume with
+                approve {gate: dry_run, target} when approved, then
+                research_dispatch mode run, or molab_start_execution followed by
+                research_wait (do not poll). When woken, molab has already been
+                checked: act on the brief. (7) Assess every settled attempt or
+                run with research_assess at four separate levels (execution,
+                data, analysis, conclusion); a clean exit with broken data is not
+                a result; read outputs only when the report is missing, invalid
+                or contradicts the acceptance criteria. Gate 4, results: ask the
+                person to approve the assessment (gate results, target the
+                assessment Report path) with its verdicts and evidence; end your
+                turn. (8) Next round: research_resume with approve, then
+                research_decide citing the evidence: conclude with the finding
+                and the conditions it holds under, or more runs, a new
+                experiment, a fix, a stopped route, or a capability gap (with
+                its component and reproduction steps). Record an analysis that
+                is not about one run with research_report, which files it as Markdown that molab renders, citing at
+                least one molab: ref, under a stable name (a new report on the
+                same host replaces the last); a report about a structure names
+                its registered file (molab:asset/<id>) in structures, which molab
+                opens in MolVis. Delete a record written in error with
+                research_retract, never keep a second one beside it. molplot_chart,
+                molvis_stage and molvis_sketch are for looking during the session:
+                their pages live on this machine, so never link them from a
+                report. Closing (conclude or stop) is the last call: it ends
+                all writes, and a refusal after closing is final; never work
+                around it in the shell. Do not start workers with the subagent
+                tools (they are refused), do not probe the workspace before
+                dispatching (the brief carries what the worker needs), and if a
+                worker or tool fails, report its error rather than running its
+                CLI from the shell. Whenever a tool refuses a step for a pending
+                gate, ask the person as it says and end your turn; the gate opens
+                only through their answer.
+
+
+                Molab owns run identity: varying declared parameters or seeds
+                is a new run in the same experiment; a changed hypothesis,
+                method or comparison is a new experiment; a retry is a new
+                attempt of the same run, never a new sample. Report outcomes accurately,
+                including failures and what the evidence does not support.
+              suffix: Your working directory is {{cwd}}.
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: present
+            name: '@deepseek-ai/dsh-tool-present'
+
+# New sessions in this profile start as Research; the user can pick another
+# preset per session, and a saved choice wins.
+- id: agent-preset-registry
+  config:
+    default: research

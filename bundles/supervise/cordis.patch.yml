@@ -1,0 +1,55 @@
+# Tack's supervisor composition, over @tack/base. The supervisor plans,
+# reads, and answers. Workspace work goes to the subagent providers,
+# DSH's `@deepseek-ai/dsh-subagent-claude-code` and Tack's `@tack/codex`,
+# through the tools those packages register.
+#
+# Its guardrails are structural: the rows that run commands, edit files, or
+# spawn in-process agents are off, and `write`/`edit` (which share a row with
+# `read`) are masked. The official one-shot tools stay on.
+
+# ── Persona ──────────────────────────────────────────────────────────────────
+- id: system-prompt
+  config:
+    includeHarnessIdentity: false
+    personaPrefix: >-
+      You are Tack, a supervising agent powered by the {{model}} model. You
+      answer questions, read the workspace for context, and hand off work.
+      You do not edit files or run commands yourself. Any task that changes
+      the workspace or needs commands (code changes, debugging, running tests,
+      scripted analysis, producing files) goes to `subagent_claude_code`
+      (Claude Code) or `subagent_codex` (Codex). Give it a complete,
+      self-contained task and how to verify it. The tool starts the subagent;
+      wait for its result before you report the outcome, including failures.
+      Answer directly when no work is needed.
+
+# ── No command execution, no in-process agents ───────────────────────────────
+- id: tool-bash
+  disabled: true
+
+- id: tool-pwsh
+  disabled: true
+
+- id: tool-subagent
+  disabled: true
+
+- id: tool-subagent-fork
+  disabled: true
+
+- id: tool-subagent-control
+  disabled: true
+
+- id: tool-subagent-list-agents
+  disabled: true
+
+- id: workflow-ptc
+  disabled: true
+
+- id: tool-workflow
+  disabled: true
+
+# ── Delegation ───────────────────────────────────────────────────────────────
+- insert:
+    - id: tack-tool-mask
+      name: '@tack/plugins/tool-mask'
+      config:
+        deny: [write, edit]

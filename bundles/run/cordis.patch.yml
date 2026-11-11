@@ -1,0 +1,22 @@
+# Tack's one-shot app composition, over the runtime's one-shot bundle.
+#
+# Tack owns the command line (`tack run --help`, usage errors). A patch cannot
+# swap a row's module, so the runtime's startup row is disabled and a Tack row
+# providing the same `headlessStartup` service is inserted.
+#
+# The runtime's one-shot bundle reads keys only from the launch environment.
+# Tack's `auth set` stores them in the shared credential file, so those rows
+# stay on for `tack run`.
+
+- id: credentials
+  disabled: false
+
+- id: authorization
+  disabled: false
+
+- id: headless-startup
+  disabled: true
+
+- insert:
+    - id: tack-headless-startup
+      name: '@tack/plugins/headless-startup'

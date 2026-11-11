@@ -1,0 +1,6 @@
+# Keep DSH's shell and replace only its deployment brand occupants.
+- id: ui-brand-official
+  disabled: true
+- insert:
+    - id: tack-ui
+      name: '@tack/ui'

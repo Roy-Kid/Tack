@@ -1,0 +1,4 @@
+# Mount this package's plugin in the profile it is installed into.
+- insert:
+    - id: tack-echo
+      name: tack-plugin-echo

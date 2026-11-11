@@ -1,0 +1,48 @@
+{
+  "name": "tack",
+  "version": "0.9.0",
+  "description": "Tack agent harness",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "tack": "lib/bin.js"
+  },
+  "files": [
+    "lib"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "rslib build"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-app-boot": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-atomic-write": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-base": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-cmdline": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-credentials": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-headless": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-home-paths": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-http-proxy": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-launch-environment": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-plugin-manager": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-subagent-claude-code": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-web-app": "0.2.1-rc.5",
+    "@tack/base": "0.6.0",
+    "@tack/codex": "0.1.0",
+    "@tack/molplot": "0.1.0",
+    "@tack/molvis": "0.1.0",
+    "@tack/plugins": "0.4.0",
+    "@tack/research": "0.1.0",
+    "@tack/research-profile": "0.1.0",
+    "@tack/research-run": "0.1.0",
+    "@tack/run": "0.3.0",
+    "@tack/subagents": "0.1.0",
+    "@tack/supervise": "0.1.0",
+    "@tack/ui": "0.1.0",
+    "commander": "15.0.0",
+    "pnpm": "12.6.0",
+    "semver": "7.8.5"
+  }
+}

@@ -1,0 +1,63 @@
+import { describe, expect, it } from "@rstest/core";
+import { formatVersion } from "../../packages/tack/src/commands.js";
+import { doctorExitCode, formatDoctorReport, type DoctorReport } from "../../packages/tack/src/doctor.js";
+
+const base: DoctorReport = {
+  tack: "0.1.0",
+  runtime: { name: "DSH", version: "9.9.9" },
+  node: "v22.0.0",
+  home: "/x/tack",
+  homeExists: true,
+  profiles: [{ name: "default", dir: "/x/tack/profiles/default", bundles: ["a", "b"], layers: ["a", "b"], skipped: [] }],
+  readiness: { model: "deepseek-official/deepseek-flash", keyRef: "DEEPSEEK_API_KEY", keySet: false },
+  packageManager: { name: "pnpm", version: "1.2.3" },
+  compose: { profile: "default", rows: 3, missing: [] },
+};
+
+describe("formatVersion", () => {
+  it("prints Tack and runtime versions", () => {
+    const text = formatVersion({ tack: "0.1.0", runtimeName: "DSH", runtimeVersion: "9.9.9" });
+    const lines = text.split("\n").filter(Boolean);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatch(/^Tack\s+0\.1\.0$/);
+    expect(lines[1]).toMatch(/^Runtime\s+DSH 9\.9\.9$/);
+  });
+});
+
+describe("formatDoctorReport", () => {
+  it("mentions every field and never a secret", () => {
+    const text = formatDoctorReport(base);
+    expect(text).toContain("0.1.0");
+    expect(text).toContain("DSH 9.9.9");
+    expect(text).toContain("v22.0.0");
+    expect(text).toContain("/x/tack");
+    expect(text).toContain("deepseek-official/deepseek-flash (DEEPSEEK_API_KEY not set)");
+    expect(text).toContain("Ready       no: set the key with `tack auth set DEEPSEEK_API_KEY`");
+    expect(text).toContain("pnpm 1.2.3 (bundled)");
+    expect(text).toContain("default: a, b");
+    expect(text).toContain("3 rows");
+    expect(text).not.toMatch(/sk-|secret/i);
+  });
+
+  it("reports set keys without their value and lists skipped bundles", () => {
+    const text = formatDoctorReport({
+      ...base,
+      readiness: { model: "fake/fake-1", keyRef: "FAKE_KEY", keySet: true, keySource: "store" },
+      profiles: [{ ...base.profiles[0]!, skipped: [{ packageName: "c", reason: "unreadable" }] }],
+    });
+    expect(text).toContain("fake/fake-1 (FAKE_KEY set (store))");
+    expect(text).toContain("Ready       yes");
+    expect(text).toContain("skipped c: unreadable");
+  });
+});
+
+describe("doctorExitCode", () => {
+  it("is 0 for a healthy report", () => {
+    expect(doctorExitCode(base)).toBe(0);
+  });
+  it("is 1 when required rows are missing, on error, or without a compose result", () => {
+    expect(doctorExitCode({ ...base, compose: { profile: "default", rows: 1, missing: ["agent-loop"] } })).toBe(1);
+    expect(doctorExitCode({ ...base, error: "boom" })).toBe(1);
+    expect(doctorExitCode({ ...base, compose: undefined })).toBe(1);
+  });
+});

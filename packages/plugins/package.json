@@ -1,0 +1,25 @@
+{
+  "name": "@tack/plugins",
+  "version": "0.4.0",
+  "description": "Tack's own runtime plugins",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    "./headless-startup": "./lib/headless-startup.js",
+    "./job-wait": "./lib/job-wait.js",
+    "./tool-mask": "./lib/tool-mask.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "rslib build"
+  },
+  "dependencies": {
+    "commander": "15.0.0"
+  }
+}

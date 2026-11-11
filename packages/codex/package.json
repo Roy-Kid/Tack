@@ -1,0 +1,49 @@
+{
+  "name": "@tack/codex",
+  "version": "0.1.0",
+  "description": "Codex as a DSH subagent provider over the official app-server protocol, tracking current Codex releases",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "rslib build"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@openai/codex": "^0.166.0",
+    "zod": "4.6.5"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-brand": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-sdk-protocol": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-session": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-subagent": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-subprocess": "0.2.1-rc.5"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-brand": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-llm": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-sdk-protocol": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-session": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-subagent": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-subprocess": "0.2.1-rc.5"
+  }
+}

@@ -1,0 +1,30 @@
+# Tack policy over the subagent providers, after the Claude Code and Codex
+# bundles that insert them.
+
+# ── Claude Code ──────────────────────────────────────────────────────────────
+# Every Claude Code subagent runs unattended. The provider's default,
+# `dontAsk`, denies every permission prompt, so a delegated task could not
+# write a file or run a command. `auto` lets Claude Code's own permission
+# classifier decide each request; project and user settings (hooks such as a
+# workspace's policy guards) still apply.
+#
+# A Claude Code subagent is one query: when its turn ends the provider tears
+# the child down, and anything it left running in the background dies with
+# it (a `molab run` it backgrounded and meant to watch was killed mid-node).
+# Background tasks are therefore off, so long commands run in the foreground
+# and the child sees them finish; the shell timeout is raised to fit a
+# workflow run (default 10 min, at most 2 h per command).
+- id: subagent-claude-code
+  config:
+    permissionMode: auto
+    env:
+      CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
+      BASH_DEFAULT_TIMEOUT_MS: "600000"
+      BASH_MAX_TIMEOUT_MS: "7200000"
+
+# ── Waiting on subagents ─────────────────────────────────────────────────────
+# A subagent is a background job: its owner is notified when it settles.
+# Shell `sleep` while such a job runs is refused with the right way to wait.
+- insert:
+    - id: tack-job-wait
+      name: '@tack/plugins/job-wait'

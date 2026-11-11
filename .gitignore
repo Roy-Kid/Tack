@@ -1,0 +1,15 @@
+node_modules/
+packages/*/lib/
+*.log
+.DS_Store
+
+# Local sessions, review captures, and scratch experiments.
+.impeccable/
+.playwright-mcp/
+/experiments/
+
+# Local provider credentials.
+.env
+.env.*
+!.env.example
+!.env.template

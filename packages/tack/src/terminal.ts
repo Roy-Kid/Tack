@@ -1,0 +1,83 @@
+/**
+ * Tack's terminal adapter. Tack owns its process's terminal: every line the
+ * runtime prints under its own label is relabelled as Tack's before it reaches
+ * the user. Pure Tack code; no runtime imports.
+ *
+ * The runtime writes each labelled line in one write call, so a label is only
+ * rewritten where a write begins a line. Unlabelled output (answers, streamed
+ * reasoning text, JSON events) passes through byte-for-byte.
+ */
+
+/** Runtime line labels and their Tack replacements. */
+export const LABELS: readonly (readonly [string, string])[] = [
+  ["dsh: ", "tack: "],
+];
+
+/**
+ * Tack's next step for a runtime line, printed on its own line after it.
+ * A missing provider key points at Tack's command, not the runtime's services.
+ */
+export function hintFor(line: string): string | undefined {
+  if (!line.includes("MISSING_CREDENTIAL")) return undefined;
+  const ref = /\b([A-Z][A-Z0-9_]*(?:API_KEY|_KEY|_TOKEN))\b/.exec(line)?.[1];
+  if (ref === undefined) return undefined;
+  return `tack: set the key with \`tack auth set ${ref}\` (reads it from stdin), or export ${ref}\n`;
+}
+
+export interface LineState {
+  atLineStart: boolean;
+}
+
+/** Relabel every line start in `chunk`; `state` carries whether the previous chunk ended a line. */
+export function relabelChunk(chunk: string, state: LineState, labels: readonly (readonly [string, string])[] = LABELS): string {
+  let out = "";
+  let index = 0;
+  let atLineStart = state.atLineStart;
+  while (index < chunk.length) {
+    const newline = chunk.indexOf("\n", index);
+    const end = newline === -1 ? chunk.length : newline + 1;
+    let segment = chunk.slice(index, end);
+    if (atLineStart) {
+      for (const [from, to] of labels) {
+        if (segment.startsWith(from)) {
+          segment = to + segment.slice(from.length);
+          break;
+        }
+      }
+    }
+    out += segment;
+    if (newline !== -1) out += hintFor(segment) ?? "";
+    atLineStart = newline !== -1;
+    index = end;
+  }
+  state.atLineStart = chunk.length === 0 ? state.atLineStart : atLineStart;
+  return out;
+}
+
+type WriteArgs = [chunk: unknown, encodingOrCallback?: unknown, callback?: unknown];
+
+/** Route a stream's string writes through {@link relabelChunk}. Returns an uninstaller. */
+export function relabelStream(stream: NodeJS.WriteStream): () => void {
+  const original = stream.write.bind(stream) as (...args: WriteArgs) => boolean;
+  const state: LineState = { atLineStart: true };
+  stream.write = ((...args: WriteArgs) => {
+    const [chunk, ...rest] = args;
+    if (typeof chunk === "string") return original(relabelChunk(chunk, state), ...rest);
+    if (chunk instanceof Uint8Array) {
+      const text = Buffer.from(chunk).toString("utf8");
+      const relabelled = relabelChunk(text, state);
+      return original(relabelled === text ? chunk : relabelled, ...rest);
+    }
+    return original(chunk, ...rest);
+  }) as NodeJS.WriteStream["write"];
+  return () => {
+    stream.write = original as NodeJS.WriteStream["write"];
+  };
+}
+
+/**
+ * Relabel diagnostics on stderr, preserving answers and JSON events on stdout.
+ */
+export function installTerminalAdapter(): void {
+  relabelStream(process.stderr);
+}

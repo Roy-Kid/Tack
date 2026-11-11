@@ -1,0 +1,14 @@
+{
+  "name": "@tack/subagents",
+  "version": "0.1.0",
+  "description": "Tack policy over the subagent providers: Claude Code runs unattended under its own permission classifier, and agents wait on subagent jobs instead of sleeping",
+  "license": "MIT",
+  "files": [
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

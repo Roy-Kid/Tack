@@ -1,0 +1,14 @@
+{
+  "name": "@tack/supervise",
+  "version": "0.1.0",
+  "description": "Tack supervisor composition: an agent that answers and reads, and hands workspace work to DeepSeek Harness's Claude Code and Codex subagent plugins",
+  "license": "MIT",
+  "files": [
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

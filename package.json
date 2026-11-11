@@ -1,0 +1,33 @@
+{
+  "name": "tack-monorepo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "bundles/*"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "npm run build -w @tack/plugins -w @tack/ui -w @tack/research -w @tack/molplot -w @tack/molvis -w @tack/codex -w tack",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "rslint --type-check",
+    "test": "npm run build && rstest run",
+    "test:unit": "rstest run tests/unit",
+    "setup": "npm ci && npm run build && npm link -w tack && node packages/tack/lib/bin.js doctor",
+    "test:agent": "npm run build && rstest run tests/integration/agent.test.ts tests/integration/delegate.test.ts",
+    "test:install": "rstest run -c rstest.install.config.ts",
+    "test:live": "npm run build && node scripts/live-smoke.ts"
+  },
+  "devDependencies": {
+    "@rslib/core": "1.0.2",
+    "@rslint/core": "0.9.3",
+    "@rstest/core": "0.12.2",
+    "@types/node": "26.6.2",
+    "@types/semver": "7.8.0",
+    "semver": "7.8.5",
+    "typescript": "7.0.2"
+  },
+  "packageManager": "npm@11.17.0+sha512.3eeaf18997b11070d313849268b23766b9db0068997dec9471073170fe43fa17f2b4d0337bf0f52330ee2274e7f5754b21b01052742e48f5c9c74d8b1e32ef43"
+}

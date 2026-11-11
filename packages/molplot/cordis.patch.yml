@@ -1,0 +1,4 @@
+# Mount MolPlot when this package is installed as its own bundle.
+- insert:
+    - id: tack-molplot
+      name: '@tack/molplot'

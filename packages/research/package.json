@@ -1,0 +1,56 @@
+{
+  "name": "@tack/research",
+  "version": "0.1.0",
+  "description": "Tack research supervision: bind a Molab scope and keep every delegation, plan, assessment, report and decision as Molab knowledge; workers are DSH's own subagent tools",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./lib/index.js"
+    },
+    "./store": {
+      "types": "./src/store.ts",
+      "default": "./lib/store.js"
+    },
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib"
+  ],
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "rslib build"
+  },
+  "dependencies": {
+    "@flowgram.ai/free-container-plugin": "1.0.16",
+    "@flowgram.ai/free-layout-editor": "1.0.16",
+    "@flowgram.ai/minimap-plugin": "1.0.16",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "zod": "4.6.5"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.5"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-agent": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-llm": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.5"
+  }
+}

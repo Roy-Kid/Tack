@@ -1,0 +1,14 @@
+{
+  "name": "@tack/research-run",
+  "version": "0.1.0",
+  "description": "Tack research supervision for `tack run`: the research tools and supervisor persona on the headless stack; workers keep their tools",
+  "license": "MIT",
+  "files": [
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

@@ -1,0 +1,91 @@
+import { spawn } from "node:child_process";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+
+export const REPO_ROOT = resolve(import.meta.dirname, "..");
+export const BIN = join(REPO_ROOT, "packages", "tack", "lib", "bin.js");
+
+export function readJson<T>(path: string): T {
+  return JSON.parse(readFileSync(path, "utf8")) as T;
+}
+
+export function tempHome(): string {
+  return mkdtempSync(join(tmpdir(), "tack-test-home-"));
+}
+
+/** Environment for a spawned Tack: isolated home, no credentials, telemetry off. */
+export function testEnv(home: string, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, TACK_HOME: home, DSH_TELEMETRY_DISABLED: "1", ...extra };
+  delete env.DEEPSEEK_API_KEY;
+  delete env.DSH_HOME;
+  return env;
+}
+
+export interface SpawnResult {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+  stdout: string;
+  stderr: string;
+}
+
+export interface SpawnOptions {
+  home: string;
+  input?: string;
+  /** Working directory (default: this process's). */
+  cwd?: string;
+  /** Extra environment on top of {@link testEnv}. */
+  env?: NodeJS.ProcessEnv;
+  /** The `tack` entry to run (default: the repository's built bin). */
+  bin?: string;
+}
+
+export function spawnTack(args: readonly string[], options: SpawnOptions): Promise<SpawnResult> {
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(process.execPath, [options.bin ?? BIN, ...args], {
+      env: testEnv(options.home, options.env),
+      stdio: ["pipe", "pipe", "pipe"],
+      ...(options.cwd !== undefined && { cwd: options.cwd }),
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
+    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    child.on("error", reject);
+    child.on("close", (code, signal) => resolvePromise({ code, signal, stdout, stderr }));
+    if (options.input !== undefined) child.stdin.write(options.input);
+    child.stdin.end();
+  });
+}
+
+export interface DumpRow {
+  id: string;
+  name?: string;
+  disabled?: string;
+  lines: string[];
+}
+
+/** Top-level rows of a `tack doctor --dump-config` document (id, module name, disabled expression). */
+export function parseDumpRows(text: string): DumpRow[] {
+  const rows: DumpRow[] = [];
+  let current: DumpRow | undefined;
+  for (const line of text.split("\n")) {
+    const id = /^- id: (.+)$/.exec(line);
+    if (id) {
+      current = { id: id[1]!.replace(/^['"]|['"]$/g, ""), lines: [] };
+      rows.push(current);
+      continue;
+    }
+    if (current === undefined) continue;
+    if (!line.startsWith("  ")) {
+      if (line.trim() !== "" && !line.startsWith("#")) current = undefined;
+      continue;
+    }
+    current.lines.push(line);
+    const name = /^ {2}name: (.+)$/.exec(line);
+    if (name) current.name = name[1]!.replace(/^['"]|['"]$/g, "");
+    const disabled = /^ {2}disabled: (.+)$/.exec(line);
+    if (disabled) current.disabled = disabled[1]!;
+  }
+  return rows;
+}

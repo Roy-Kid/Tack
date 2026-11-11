@@ -1,0 +1,12 @@
+# Codex as a subagent: Tack's provider over the official app-server protocol,
+# behind DSH's own subagent tool, so `subagent_codex`, the job list and the
+# UI work unchanged. Replaces @deepseek-ai/dsh-subagent-codex.
+- insert:
+    - id: subagent-codex
+      name: '@tack/codex'
+    - id: tool-subagent-codex
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: codex
+        toolName: subagent_codex
+        maxDepth: provider-managed

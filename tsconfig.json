@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "module": "nodenext",
+    "target": "es2024",
+    "lib": [
+      "es2024"
+    ],
+    "types": [
+      "node"
+    ],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "noUncheckedIndexedAccess": true,
+    "allowImportingTsExtensions": true
+  },
+  "include": [
+    "packages/tack/src",
+    "packages/plugins/src",
+    "scripts",
+    "tests",
+    "*.config.ts",
+    "packages/*/rslib.config.ts",
+    "packages/research/src",
+    "packages/molplot/src",
+    "packages/molvis/src",
+    "packages/codex/src"
+  ]
+}

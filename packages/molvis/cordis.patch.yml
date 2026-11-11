@@ -1,0 +1,4 @@
+# Mount MolVis when this package is installed as its own bundle.
+- insert:
+    - id: tack-molvis
+      name: '@tack/molvis'

@@ -1,0 +1,14 @@
+{
+  "name": "@tack/research-profile",
+  "version": "0.1.0",
+  "description": "Tack research composition over the web app: a Research session preset that supervises Molab-bound research and hands work to workers, plus the tack-research watcher",
+  "license": "MIT",
+  "files": [
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
